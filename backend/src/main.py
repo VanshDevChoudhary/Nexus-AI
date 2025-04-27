@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI
@@ -23,7 +24,7 @@ app.add_middleware(
 
 
 @app.get("/api/v1/health")
-async def health_check() -> dict:
+async def health_check() -> dict[str, str]:
     db_status = "healthy"
     redis_status = "healthy"
 
@@ -35,7 +36,7 @@ async def health_check() -> dict:
         db_status = "unhealthy"
 
     try:
-        r = aioredis.from_url(settings.redis_url)
+        r: Any = aioredis.from_url(settings.redis_url)
         await r.ping()
         await r.aclose()
     except Exception as e:
