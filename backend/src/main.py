@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI
@@ -36,7 +35,7 @@ async def health_check() -> dict[str, str]:
         db_status = "unhealthy"
 
     try:
-        r: Any = aioredis.from_url(settings.redis_url)
+        r = aioredis.from_url(settings.redis_url)  # type: ignore[no-untyped-call]
         await r.ping()
         await r.aclose()
     except Exception as e:
