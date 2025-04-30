@@ -19,8 +19,14 @@ export default function RootLayout({
           <Link href="/" className="text-lg font-semibold tracking-tight">
             nexus-ai
           </Link>
+          <Link
+            href="/"
+            className="text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          >
+            Workflows
+          </Link>
         </nav>
-        <main className="p-6">{children}</main>
+        <main>{children}</main>
       </body>
     </html>
   );
