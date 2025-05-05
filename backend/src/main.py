@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from src.api.executions import router as executions_router
 from src.api.workflows import router as workflows_router
 from src.config import settings
 from src.db import engine
@@ -23,6 +24,7 @@ app.add_middleware(
 )
 
 app.include_router(workflows_router)
+app.include_router(executions_router)
 
 
 @app.get("/api/v1/health")
