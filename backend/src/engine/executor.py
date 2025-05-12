@@ -12,6 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.adapters.anthropic_adapter import AnthropicAdapter
 from src.adapters.base import BaseLLMAdapter, LLMResponse
 from src.adapters.openai_adapter import OpenAIAdapter
+from src.engine.backtrack import (
+    DependencyFailureHandler,
+    FallbackHandler,
+    RetryConfig,
+    RetryHandler,
+)
 from src.engine.planner import ExecutionPlan
 from src.models.execution import AgentExecution, WorkflowExecution
 
@@ -67,7 +73,16 @@ def _evaluate_condition(condition: str | None, output_text: str) -> bool:
     return False
 
 
-async def _execute_single_agent(
+async def _call_llm(
+    adapter: BaseLLMAdapter,
+    prompt: str,
+    system_prompt: str,
+    config: dict[str, Any],
+) -> LLMResponse:
+    return await adapter.complete(prompt=prompt, system_prompt=system_prompt, config=config)
+
+
+async def _execute_agent_with_recovery(
     db: AsyncSession,
     execution_id: uuid.UUID,
     node_id: str,
@@ -76,8 +91,9 @@ async def _execute_single_agent(
     input_data: dict[str, Any] | None,
     parallel_group: int,
     execution_order: int,
+    node_configs: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    """Run one agent: create record, call LLM, update record."""
+    """Run one agent with retry logic and fallback support."""
     provider = node_config.get("provider", "openai")
     model = node_config.get("model", "gpt-4o")
     system_prompt = node_config.get("system_prompt", "")
@@ -104,43 +120,146 @@ async def _execute_single_agent(
     db.add(agent_exec)
     await db.flush()
 
-    try:
-        adapter = _get_adapter(provider)
-        result: LLMResponse = await adapter.complete(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            config=node_config,
-        )
+    adapter = _get_adapter(provider)
 
+    max_retries = node_config.get("max_retries", 2)
+    retry_handler = RetryHandler(RetryConfig(max_retries=max_retries))
+
+    retry_result = await retry_handler.execute(
+        _call_llm, adapter, prompt, system_prompt, node_config,
+    )
+
+    if retry_result.success:
+        llm_resp: LLMResponse = retry_result.result
         agent_exec.status = "completed"
-        agent_exec.output_data = {"text": result.text}
-        agent_exec.tokens_prompt = result.tokens.prompt
-        agent_exec.tokens_completion = result.tokens.completion
-        agent_exec.cost = result.cost
-        agent_exec.latency_ms = result.latency_ms
+        agent_exec.output_data = {"text": llm_resp.text}
+        agent_exec.tokens_prompt = llm_resp.tokens.prompt
+        agent_exec.tokens_completion = llm_resp.tokens.completion
+        agent_exec.cost = llm_resp.cost
+        agent_exec.latency_ms = llm_resp.latency_ms
+        agent_exec.retries = retry_result.attempts - 1
         agent_exec.completed_at = datetime.now(timezone.utc)
-
         await db.flush()
 
         return {
             "node_id": node_id,
             "status": "completed",
-            "text": result.text,
+            "text": llm_resp.text,
             "agent_name": node_config.get("name", node_id),
-            "tokens_prompt": result.tokens.prompt,
-            "tokens_completion": result.tokens.completion,
-            "cost": result.cost,
+            "tokens_prompt": llm_resp.tokens.prompt,
+            "tokens_completion": llm_resp.tokens.completion,
+            "cost": llm_resp.cost,
         }
 
-    except Exception as exc:
-        logger.error(f"Agent {node_id} failed: {exc}")
-        agent_exec.status = "failed"
-        agent_exec.error_message = str(exc)
-        agent_exec.completed_at = datetime.now(timezone.utc)
+    # retries exhausted — mark original as failed
+    logger.error(f"Agent {node_id} failed after {retry_result.attempts} attempts")
+    agent_exec.status = "failed"
+    agent_exec.error_message = retry_result.error
+    agent_exec.retries = retry_result.attempts - 1
+    agent_exec.completed_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    # check for fallback
+    if FallbackHandler.should_fallback(node_config):
+        fallback_id = FallbackHandler.get_fallback_id(node_config)
+        assert fallback_id is not None
+        fallback_cfg = node_configs.get(fallback_id, {})
+
+        fb_result = await _execute_fallback(
+            db=db,
+            execution_id=execution_id,
+            fallback_node_id=fallback_id,
+            original_node_id=node_id,
+            fallback_config=fallback_cfg,
+            dependency_outputs=dependency_outputs,
+            input_data=input_data,
+            parallel_group=parallel_group,
+            execution_order=execution_order,
+        )
+        return fb_result
+
+    return {
+        "node_id": node_id,
+        "status": "failed",
+        "error": retry_result.error,
+    }
+
+
+async def _execute_fallback(
+    db: AsyncSession,
+    execution_id: uuid.UUID,
+    fallback_node_id: str,
+    original_node_id: str,
+    fallback_config: dict[str, Any],
+    dependency_outputs: dict[str, dict[str, str]],
+    input_data: dict[str, Any] | None,
+    parallel_group: int,
+    execution_order: int,
+) -> dict[str, Any]:
+    """Execute a fallback agent. No retries on fallback (V1)."""
+    provider = fallback_config.get("provider", "openai")
+    model = fallback_config.get("model", "gpt-4o")
+    system_prompt = fallback_config.get("system_prompt", "")
+
+    fb_exec = AgentExecution(
+        execution_id=execution_id,
+        agent_node_id=fallback_node_id,
+        agent_name=fallback_config.get("name", fallback_node_id),
+        status="running",
+        provider=provider,
+        model_used=model,
+        parallel_group=parallel_group,
+        execution_order=execution_order,
+        is_fallback=True,
+        fallback_for=original_node_id,
+        started_at=datetime.now(timezone.utc),
+    )
+
+    prompt = _build_agent_prompt(fallback_config, dependency_outputs, input_data)
+    fb_exec.input_data = {
+        "prompt": prompt,
+        "system_prompt": system_prompt,
+        "dependency_outputs": dependency_outputs,
+    }
+
+    db.add(fb_exec)
+    await db.flush()
+
+    try:
+        adapter = _get_adapter(provider)
+        result: LLMResponse = await adapter.complete(
+            prompt=prompt, system_prompt=system_prompt, config=fallback_config,
+        )
+
+        fb_exec.status = "completed"
+        fb_exec.output_data = {"text": result.text}
+        fb_exec.tokens_prompt = result.tokens.prompt
+        fb_exec.tokens_completion = result.tokens.completion
+        fb_exec.cost = result.cost
+        fb_exec.latency_ms = result.latency_ms
+        fb_exec.completed_at = datetime.now(timezone.utc)
         await db.flush()
 
         return {
-            "node_id": node_id,
+            "node_id": original_node_id,
+            "status": "completed",
+            "text": result.text,
+            "agent_name": fallback_config.get("name", fallback_node_id),
+            "tokens_prompt": result.tokens.prompt,
+            "tokens_completion": result.tokens.completion,
+            "cost": result.cost,
+            "is_fallback": True,
+        }
+
+    except Exception as exc:
+        logger.error(f"Fallback {fallback_node_id} for {original_node_id} also failed: {exc}")
+        fb_exec.status = "failed"
+        fb_exec.error_message = str(exc)
+        fb_exec.completed_at = datetime.now(timezone.utc)
+        await db.flush()
+
+        return {
+            "node_id": original_node_id,
             "status": "failed",
             "error": str(exc),
         }
@@ -157,7 +276,6 @@ async def execute_workflow(
     Run all parallel groups in order.
     Within each group, agents execute concurrently via asyncio.gather().
     """
-    # mark execution as running
     exec_record = await db.get(WorkflowExecution, execution_id)
     if not exec_record:
         logger.error(f"Execution {execution_id} not found")
@@ -167,13 +285,11 @@ async def execute_workflow(
     exec_record.started_at = datetime.now(timezone.utc)
     await db.flush()
 
-    # build node config lookup and edge info from graph
     node_configs: dict[str, dict[str, Any]] = {}
     for node in graph_data.get("nodes", []):
         node_configs[node["id"]] = node.get("data", {})
 
     edges = graph_data.get("edges", [])
-    # edges_from[source] = [(target, condition)]
     edges_from: dict[str, list[tuple[str, str | None]]] = {}
     for edge in edges:
         src = edge["source"]
@@ -191,7 +307,6 @@ async def execute_workflow(
             nid = agent_entry.node_id
 
             if nid in skipped_nodes:
-                # create a skipped record
                 skipped_rec = AgentExecution(
                     execution_id=execution_id,
                     agent_node_id=nid,
@@ -207,8 +322,6 @@ async def execute_workflow(
                 order_counter += 1
                 continue
 
-            # check conditional edges — skip if all incoming conditions fail
-            # "incoming" = any edge targeting this node
             should_run = True
             for edge in edges:
                 if edge["target"] == nid:
@@ -236,11 +349,9 @@ async def execute_workflow(
                 order_counter += 1
                 continue
 
-            # collect dependency outputs
             dep_outputs: dict[str, dict[str, str]] = {}
             node_cfg = node_configs.get(nid, {})
 
-            # find deps by looking at edges targeting this node
             for edge in edges:
                 if edge["target"] == nid and edge["source"] in completed_outputs:
                     dep_outputs[edge["source"]] = completed_outputs[edge["source"]]
@@ -249,7 +360,7 @@ async def execute_workflow(
             order_counter += 1
 
             tasks.append(
-                _execute_single_agent(
+                _execute_agent_with_recovery(
                     db=db,
                     execution_id=execution_id,
                     node_id=nid,
@@ -258,6 +369,7 @@ async def execute_workflow(
                     input_data=input_data if not dep_outputs else None,
                     parallel_group=group.group,
                     execution_order=current_order,
+                    node_configs=node_configs,
                 )
             )
 
@@ -275,17 +387,15 @@ async def execute_workflow(
                             "text": str(res.get("text", "")),
                             "agent_name": str(res.get("agent_name", nid)),
                         }
-                        # update execution totals
                         exec_record.total_tokens_prompt += res.get("tokens_prompt", 0)
                         exec_record.total_tokens_completion += res.get("tokens_completion", 0)
                         exec_record.total_cost += res.get("cost", 0.0)
                     elif res["status"] == "failed":
-                        # propagate: mark all downstream dependents as skipped
-                        _propagate_failure(nid, edges_from, skipped_nodes)
+                        DependencyFailureHandler.propagate(nid, edges_from, skipped_nodes)
 
         await db.flush()
 
-    # determine final status
+    # final status
     failed_q = await db.execute(
         select(AgentExecution).where(
             AgentExecution.execution_id == execution_id,
@@ -298,24 +408,9 @@ async def execute_workflow(
         exec_record.status = "failed"
         exec_record.error_message = "All agents failed"
     elif failed_agents:
-        exec_record.status = "completed"  # partial success
+        exec_record.status = "completed"
     else:
         exec_record.status = "completed"
 
     exec_record.completed_at = datetime.now(timezone.utc)
     await db.commit()
-
-
-def _propagate_failure(
-    failed_node: str,
-    edges_from: dict[str, list[tuple[str, str | None]]],
-    skipped_nodes: set[str],
-) -> None:
-    """Recursively mark downstream nodes as skipped."""
-    stack = [failed_node]
-    while stack:
-        current = stack.pop()
-        for target, _ in edges_from.get(current, []):
-            if target not in skipped_nodes:
-                skipped_nodes.add(target)
-                stack.append(target)
