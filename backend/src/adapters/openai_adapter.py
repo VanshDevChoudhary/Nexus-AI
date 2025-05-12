@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from src.adapters.base import BaseLLMAdapter, LLMResponse, TokenUsage, calculate_cost
 from src.config import settings
@@ -23,7 +24,7 @@ class OpenAIAdapter(BaseLLMAdapter):
         temperature = config.get("temperature", 0.7)
         max_tokens = config.get("max_tokens", 1000)
 
-        messages: list[dict[str, str]] = []
+        messages: list[ChatCompletionMessageParam] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})

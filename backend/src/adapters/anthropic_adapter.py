@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from anthropic import AsyncAnthropic
+from anthropic.types import TextBlock
 
 from src.adapters.base import BaseLLMAdapter, LLMResponse, TokenUsage, calculate_cost
 from src.config import settings
@@ -35,7 +36,11 @@ class AnthropicAdapter(BaseLLMAdapter):
 
         prompt_tokens = response.usage.input_tokens
         completion_tokens = response.usage.output_tokens
-        text = response.content[0].text if response.content else ""
+        text = ""
+        if response.content:
+            first = response.content[0]
+            if isinstance(first, TextBlock):
+                text = first.text
 
         cost = calculate_cost("anthropic", model, prompt_tokens, completion_tokens)
 
