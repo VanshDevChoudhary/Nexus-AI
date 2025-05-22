@@ -96,3 +96,14 @@ class ExecutionListResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+
+class BudgetSuggestionResponse(BaseModel):
+    action: str
+    agent: str
+    saves: float
+    from_model: str | None = Field(None, alias="from")
+    to_model: str | None = Field(None, alias="to")
+    impact: str | None = None
+
+    model_config = {"populate_by_name": True}
