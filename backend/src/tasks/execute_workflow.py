@@ -35,6 +35,8 @@ def execute_workflow_task(
     plan_dict: dict[str, Any],
     graph_data: dict[str, Any],
     input_data: dict[str, Any] | None = None,
+    budget_max_tokens: int | None = None,
+    budget_max_cost: float | None = None,
 ) -> dict[str, str]:
     """Celery task — bridges sync Celery worker into async executor."""
     eid = uuid.UUID(execution_id)
@@ -42,7 +44,11 @@ def execute_workflow_task(
 
     async def _run() -> None:
         async with async_session() as db:
-            await execute_workflow(db, eid, plan, graph_data, input_data)
+            await execute_workflow(
+                db, eid, plan, graph_data, input_data,
+                budget_max_tokens=budget_max_tokens,
+                budget_max_cost=budget_max_cost,
+            )
 
     loop = asyncio.new_event_loop()
     try:

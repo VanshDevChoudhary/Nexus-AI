@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import get_db
+from src.engine.budget import estimate_workflow_cost, generate_budget_suggestions
 from src.engine.planner import CircularDependencyError, EmptyWorkflowError, create_execution_plan
 from src.models.execution import WorkflowExecution
 from src.schemas.execution import (
@@ -66,6 +67,47 @@ async def execute_workflow(
         budget_max_tokens = payload.budget.max_tokens
         budget_max_cost = payload.budget.max_cost
 
+    cost_estimate = estimate_workflow_cost(plan, graph_data)
+    estimated_cost = cost_estimate.total
+
+    if budget_max_cost is not None and estimated_cost > budget_max_cost:
+        suggestions = generate_budget_suggestions(
+            cost_estimate, budget_max_cost, plan, graph_data,
+        )
+        suggestion_dicts = []
+        for s in suggestions:
+            entry: dict[str, Any] = {"action": s.action, "agent": s.agent, "saves": s.saves}
+            if s.from_model:
+                entry["from"] = s.from_model
+            if s.to_model:
+                entry["to"] = s.to_model
+            if s.impact:
+                entry["impact"] = s.impact
+            suggestion_dicts.append(entry)
+
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "BUDGET_EXCEEDED_ESTIMATE",
+                "message": (
+                    f"Estimated cost (${estimated_cost:.2f}) "
+                    f"exceeds budget (${budget_max_cost:.2f})"
+                ),
+                "details": {
+                    "estimated_cost": estimated_cost,
+                    "budget": budget_max_cost,
+                    "suggestions": suggestion_dicts,
+                },
+            },
+        )
+
+    budget_warnings: list[str] = []
+    if budget_max_cost is not None and estimated_cost > budget_max_cost * 0.8:
+        budget_warnings.append(
+            f"Estimated cost (${estimated_cost:.2f}) is within budget "
+            f"(${budget_max_cost:.2f}) but leaves little margin"
+        )
+
     execution = WorkflowExecution(
         workflow_id=workflow_id,
         status="pending",
@@ -73,17 +115,19 @@ async def execute_workflow(
         execution_plan=plan.to_dict(),
         budget_max_tokens=budget_max_tokens,
         budget_max_cost=budget_max_cost,
+        estimated_cost=estimated_cost,
     )
     db.add(execution)
     await db.commit()
     await db.refresh(execution)
 
-    # dispatch celery task
     execute_workflow_task.delay(
         execution_id=str(execution.id),
         plan_dict=plan.to_dict(),
         graph_data=graph_data,
         input_data=payload.input_data,
+        budget_max_tokens=budget_max_tokens,
+        budget_max_cost=budget_max_cost,
     )
 
     ws_url = f"/ws/executions/{execution.id}"
@@ -92,8 +136,8 @@ async def execute_workflow(
         "data": ExecuteWorkflowResponse(
             execution_id=execution.id,
             status="pending",
-            estimated_cost=None,  # budget estimation is Phase 4
-            budget_warnings=[],
+            estimated_cost=estimated_cost,
+            budget_warnings=budget_warnings,
             websocket_url=ws_url,
         )
     }
