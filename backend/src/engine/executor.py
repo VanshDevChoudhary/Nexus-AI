@@ -18,6 +18,7 @@ from src.engine.backtrack import (
     RetryConfig,
     RetryHandler,
 )
+from src.engine.budget import BudgetEnforcer
 from src.engine.planner import ExecutionPlan
 from src.models.execution import AgentExecution, WorkflowExecution
 
@@ -271,6 +272,8 @@ async def execute_workflow(
     plan: ExecutionPlan,
     graph_data: dict[str, Any],
     input_data: dict[str, Any] | None = None,
+    budget_max_tokens: int | None = None,
+    budget_max_cost: float | None = None,
 ) -> None:
     """
     Run all parallel groups in order.
@@ -284,6 +287,8 @@ async def execute_workflow(
     exec_record.status = "running"
     exec_record.started_at = datetime.now(timezone.utc)
     await db.flush()
+
+    enforcer = BudgetEnforcer(max_tokens=budget_max_tokens, max_cost=budget_max_cost)
 
     node_configs: dict[str, dict[str, Any]] = {}
     for node in graph_data.get("nodes", []):
@@ -299,9 +304,29 @@ async def execute_workflow(
 
     completed_outputs: dict[str, dict[str, str]] = {}
     skipped_nodes: set[str] = set()
+    budget_halted = False
     order_counter = 0
 
     for group in plan.groups:
+        if budget_halted:
+            for agent_entry in group.agents:
+                nid = agent_entry.node_id
+                not_run_rec = AgentExecution(
+                    execution_id=execution_id,
+                    agent_node_id=nid,
+                    agent_name=node_configs.get(nid, {}).get("name", nid),
+                    status="skipped",
+                    provider=node_configs.get(nid, {}).get("provider", "openai"),
+                    model_used=node_configs.get(nid, {}).get("model", "gpt-4o"),
+                    parallel_group=group.group,
+                    execution_order=order_counter,
+                    error_message="not run — budget exceeded",
+                )
+                db.add(not_run_rec)
+                order_counter += 1
+            await db.flush()
+            continue
+
         tasks = []
         for agent_entry in group.agents:
             nid = agent_entry.node_id
@@ -387,11 +412,25 @@ async def execute_workflow(
                             "text": str(res.get("text", "")),
                             "agent_name": str(res.get("agent_name", nid)),
                         }
+                        agent_tokens = res.get("tokens_prompt", 0) + res.get("tokens_completion", 0)
+                        agent_cost = res.get("cost", 0.0)
                         exec_record.total_tokens_prompt += res.get("tokens_prompt", 0)
                         exec_record.total_tokens_completion += res.get("tokens_completion", 0)
-                        exec_record.total_cost += res.get("cost", 0.0)
+                        exec_record.total_cost += agent_cost
+
+                        enforcer.record(agent_tokens, agent_cost)
                     elif res["status"] == "failed":
                         DependencyFailureHandler.propagate(nid, edges_from, skipped_nodes)
+
+            budget_status = enforcer.check()
+            if budget_status == "warning":
+                logger.warning(
+                    f"Budget warning: {enforcer.used_cost:.4f}/{enforcer.max_cost} cost, "
+                    f"{enforcer.used_tokens}/{enforcer.max_tokens} tokens"
+                )
+            elif budget_status == "exceeded":
+                logger.warning(f"Budget exceeded — halting after group {group.group}")
+                budget_halted = True
 
         await db.flush()
 
@@ -404,7 +443,10 @@ async def execute_workflow(
     )
     failed_agents = failed_q.scalars().all()
 
-    if failed_agents and not completed_outputs:
+    if budget_halted:
+        exec_record.status = "completed"
+        exec_record.error_message = "Budget exceeded — execution halted early"
+    elif failed_agents and not completed_outputs:
         exec_record.status = "failed"
         exec_record.error_message = "All agents failed"
     elif failed_agents:
