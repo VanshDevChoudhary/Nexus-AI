@@ -20,6 +20,8 @@ from src.engine.backtrack import (
 )
 from src.engine.budget import BudgetEnforcer
 from src.engine.planner import ExecutionPlan
+from src.memory.store import recall as memory_recall
+from src.memory.store import store as memory_store
 from src.models.execution import AgentExecution, WorkflowExecution
 
 logger = logging.getLogger(__name__)
@@ -42,9 +44,15 @@ def _build_agent_prompt(
     node_config: dict[str, Any],
     dependency_outputs: dict[str, dict[str, str]],
     input_data: dict[str, Any] | None,
+    recalled_memories: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Construct the user prompt from workflow input + dependency outputs."""
+    """Construct the user prompt from workflow input + dependency outputs + recalled memories."""
     parts: list[str] = []
+
+    if recalled_memories:
+        parts.append("Recalled from memory:")
+        for mem in recalled_memories:
+            parts.append(f"[{mem['key']}] (relevance: {mem['similarity']:.2f}):\n{mem['text']}")
 
     if input_data:
         user_query = input_data.get("user_query", "")
@@ -111,7 +119,22 @@ async def _execute_agent_with_recovery(
         started_at=datetime.now(timezone.utc),
     )
 
-    prompt = _build_agent_prompt(node_config, dependency_outputs, input_data)
+    # memory recall (before execution)
+    recalled_memories: list[dict[str, Any]] | None = None
+    recall_query = node_config.get("memory_recall_query")
+    if recall_query:
+        try:
+            results = await memory_recall(db, execution_id, recall_query)
+            if results:
+                recalled_memories = [
+                    {"key": r.key, "text": r.text, "similarity": r.similarity}
+                    for r in results
+                ]
+                logger.info(f"Recalled {len(results)} memories for {node_id}")
+        except Exception as exc:
+            logger.warning(f"Memory recall failed for {node_id}: {exc}")
+
+    prompt = _build_agent_prompt(node_config, dependency_outputs, input_data, recalled_memories)
     agent_exec.input_data = {
         "prompt": prompt,
         "system_prompt": system_prompt,
@@ -141,6 +164,21 @@ async def _execute_agent_with_recovery(
         agent_exec.retries = retry_result.attempts - 1
         agent_exec.completed_at = datetime.now(timezone.utc)
         await db.flush()
+
+        # memory store (after execution)
+        store_key = node_config.get("memory_store_key")
+        if store_key:
+            try:
+                meta = {
+                    "agent_node_id": node_id,
+                    "agent_name": node_config.get("name", node_id),
+                }
+                await memory_store(
+                    db, execution_id, store_key, llm_resp.text,
+                    metadata=meta,
+                )
+            except Exception as exc:
+                logger.warning(f"Memory store failed for {node_id}: {exc}")
 
         return {
             "node_id": node_id,
