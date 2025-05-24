@@ -138,6 +138,34 @@ export default function NodePropertiesPanel({ node, onChange, onClose }: Props) 
                 max={300}
               />
             </Field>
+
+            <div className="pt-2 border-t border-zinc-800">
+              <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-3">Memory</p>
+
+              <div className="space-y-4">
+                <Field label="Store Key">
+                  <input
+                    type="text"
+                    value={data.memory_store_key || ""}
+                    onChange={(e) => update("memory_store_key", e.target.value || null)}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+                    placeholder="e.g. research_findings"
+                  />
+                  <p className="text-[10px] text-zinc-600 mt-1">Save output to memory with this key</p>
+                </Field>
+
+                <Field label="Recall Query">
+                  <input
+                    type="text"
+                    value={data.memory_recall_query || ""}
+                    onChange={(e) => update("memory_recall_query", e.target.value || null)}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+                    placeholder="e.g. previous research"
+                  />
+                  <p className="text-[10px] text-zinc-600 mt-1">Search memory before execution</p>
+                </Field>
+              </div>
+            </div>
           </>
         )}
 

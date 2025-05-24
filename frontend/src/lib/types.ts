@@ -13,6 +13,9 @@ export interface NodeData {
   max_retries: number;
   timeout_seconds: number;
   fallback_agent_id: string | null;
+  // memory
+  memory_store_key?: string | null;
+  memory_recall_query?: string | null;
   // tool
   tool_type?: string | null;
   tool_config?: Record<string, unknown> | null;
