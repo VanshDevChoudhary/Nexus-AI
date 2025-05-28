@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
   useRef,
@@ -26,7 +27,11 @@ import AgentNode from "./nodes/AgentNode";
 import ToolNode from "./nodes/ToolNode";
 import ConditionalNode from "./nodes/ConditionalNode";
 import NodePropertiesPanel from "./NodePropertiesPanel";
-import type { GraphData, NodeData } from "@/lib/types";
+import BudgetConfigModal from "./BudgetConfigModal";
+import ExecutionViewer from "./ExecutionViewer";
+import { useExecution } from "@/hooks/useExecution";
+import { executeWorkflow } from "@/lib/api";
+import type { ExecuteBudget, GraphData, NodeData } from "@/lib/types";
 
 const nodeTypes = {
   agent: AgentNode,
@@ -115,9 +120,10 @@ interface Props {
   initialData?: GraphData;
   onSave: (data: GraphData) => void;
   saving?: boolean;
+  workflowId?: string;
 }
 
-export default function WorkflowCanvas({ initialData, onSave, saving }: Props) {
+export default function WorkflowCanvas({ initialData, onSave, saving, workflowId }: Props) {
   const [nodes, setNodes] = useState<Node<NodeData>[]>(
     initialData?.nodes.map((n) => ({
       id: n.id,
@@ -141,10 +147,105 @@ export default function WorkflowCanvas({ initialData, onSave, saving }: Props) {
   const [selectedNode, setSelectedNode] = useState<Node<NodeData> | null>(null);
   const rfInstance = useRef<ReactFlowInstance | null>(null);
 
+  // execution state
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [execError, setExecError] = useState<string | null>(null);
+  const [showExecViewer, setShowExecViewer] = useState(false);
+
+  const {
+    nodeStatuses,
+    executionStatus,
+    totals,
+    isRunning,
+    isConnected,
+    startExecution,
+    stopListening,
+  } = useExecution();
+
+  // overlay execution status onto node data for rendering
+  const displayNodes = useMemo(() => {
+    if (!showExecViewer) return nodes;
+    return nodes.map((n) => {
+      const ns = nodeStatuses[n.id];
+      if (!ns) {
+        return {
+          ...n,
+          data: { ...n.data, _executionStatus: "pending" },
+        };
+      }
+      return {
+        ...n,
+        data: { ...n.data, _executionStatus: ns.status },
+      };
+    });
+  }, [nodes, nodeStatuses, showExecViewer]);
+
+  // minimap colors during execution
+  const minimapNodeColor = useCallback(
+    (n: Node) => {
+      if (showExecViewer) {
+        const ns = nodeStatuses[n.id];
+        if (ns) {
+          const colorMap: Record<string, string> = {
+            running: "#3b82f6",
+            completed: "#10b981",
+            failed: "#ef4444",
+            retrying: "#eab308",
+            skipped: "#a855f7",
+          };
+          return colorMap[ns.status] || "#52525b";
+        }
+        return "#52525b";
+      }
+      if (n.type === "agent") return "#3b82f6";
+      if (n.type === "tool") return "#10b981";
+      if (n.type === "conditional") return "#f97316";
+      return "#52525b";
+    },
+    [showExecViewer, nodeStatuses],
+  );
+
+  const handleRunClick = useCallback(() => {
+    if (!workflowId) return;
+    setExecError(null);
+    setShowBudgetModal(true);
+  }, [workflowId]);
+
+  const handleExecute = useCallback(
+    async (budget: ExecuteBudget, inputData?: Record<string, unknown>) => {
+      if (!workflowId) return;
+      setShowBudgetModal(false);
+      setExecError(null);
+
+      try {
+        const resp = await executeWorkflow(workflowId, {
+          budget: (budget.max_tokens || budget.max_cost) ? budget : undefined,
+          input_data: inputData ?? null,
+        });
+
+        setShowExecViewer(true);
+        startExecution(resp.execution_id);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to start execution";
+        setExecError(msg);
+      }
+    },
+    [workflowId, startExecution],
+  );
+
+  const handleCloseExecViewer = useCallback(() => {
+    setShowExecViewer(false);
+    stopListening();
+  }, [stopListening]);
+
+  // auto-dismiss exec viewer UI cleanup when execution completes + user saw it
+  useEffect(() => {
+    // keep viewer open, user can dismiss manually
+  }, [executionStatus]);
+
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       setNodes((nds) => applyNodeChanges(changes, nds));
-      // update selected node if it was moved
       const selectionChange = changes.find(
         (c) => c.type === "select" && c.selected,
       );
@@ -155,18 +256,15 @@ export default function WorkflowCanvas({ initialData, onSave, saving }: Props) {
           return nds;
         });
       }
-      // deselect
       const deselect = changes.find(
         (c) => c.type === "select" && !c.selected,
       );
       if (deselect && "id" in deselect && deselect.id === selectedNode?.id) {
-        // don't deselect if another node is being selected simultaneously
         const anySelected = changes.some(
           (c) => c.type === "select" && c.selected,
         );
         if (!anySelected) setSelectedNode(null);
       }
-      // handle delete
       const removeChange = changes.find((c) => c.type === "remove");
       if (removeChange && "id" in removeChange && removeChange.id === selectedNode?.id) {
         setSelectedNode(null);
@@ -271,19 +369,22 @@ export default function WorkflowCanvas({ initialData, onSave, saving }: Props) {
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
           <button
             onClick={() => addNode("agent")}
-            className="bg-blue-600/90 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm"
+            disabled={isRunning}
+            className="bg-blue-600/90 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm disabled:opacity-40"
           >
             + Agent
           </button>
           <button
             onClick={() => addNode("tool")}
-            className="bg-emerald-600/90 hover:bg-emerald-500 text-white px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm"
+            disabled={isRunning}
+            className="bg-emerald-600/90 hover:bg-emerald-500 text-white px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm disabled:opacity-40"
           >
             + Tool
           </button>
           <button
             onClick={() => addNode("conditional")}
-            className="bg-orange-600/90 hover:bg-orange-500 text-white px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm"
+            disabled={isRunning}
+            className="bg-orange-600/90 hover:bg-orange-500 text-white px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm disabled:opacity-40"
           >
             + Conditional
           </button>
@@ -296,15 +397,39 @@ export default function WorkflowCanvas({ initialData, onSave, saving }: Props) {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || isRunning}
             className="bg-zinc-800/90 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm disabled:opacity-50"
           >
             {saving ? "Saving..." : "Save"}
           </button>
+          {workflowId && nodes.length > 0 && (
+            <>
+              <div className="w-px h-5 bg-zinc-700 mx-1" />
+              <button
+                onClick={handleRunClick}
+                disabled={isRunning}
+                className="bg-violet-600/90 hover:bg-violet-500 text-white px-4 py-1.5 rounded text-xs font-semibold backdrop-blur-sm disabled:opacity-50"
+              >
+                {isRunning ? "Running..." : "Run"}
+              </button>
+            </>
+          )}
         </div>
 
+        {execError && (
+          <div className="absolute top-12 left-3 z-10 bg-red-900/80 border border-red-700 text-red-200 text-xs px-3 py-2 rounded max-w-sm">
+            {execError}
+            <button
+              onClick={() => setExecError(null)}
+              className="ml-2 text-red-400 hover:text-red-200"
+            >
+              dismiss
+            </button>
+          </div>
+        )}
+
         <ReactFlow
-          nodes={nodes}
+          nodes={displayNodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
@@ -314,7 +439,7 @@ export default function WorkflowCanvas({ initialData, onSave, saving }: Props) {
           onInit={(instance) => { rfInstance.current = instance; }}
           nodeTypes={nodeTypesMemo}
           fitView
-          deleteKeyCode={["Backspace", "Delete"]}
+          deleteKeyCode={isRunning ? [] : ["Backspace", "Delete"]}
           className="bg-zinc-950"
           defaultEdgeOptions={{
             animated: true,
@@ -325,22 +450,35 @@ export default function WorkflowCanvas({ initialData, onSave, saving }: Props) {
           <Controls className="!bg-zinc-800 !border-zinc-700 !shadow-lg [&>button]:!bg-zinc-800 [&>button]:!border-zinc-700 [&>button]:!text-zinc-400 [&>button:hover]:!bg-zinc-700" />
           <MiniMap
             className="!bg-zinc-900 !border-zinc-800"
-            nodeColor={(n) => {
-              if (n.type === "agent") return "#3b82f6";
-              if (n.type === "tool") return "#10b981";
-              if (n.type === "conditional") return "#f97316";
-              return "#52525b";
-            }}
+            nodeColor={minimapNodeColor}
             maskColor="rgba(0, 0, 0, 0.7)"
           />
         </ReactFlow>
+
+        {showExecViewer && (
+          <ExecutionViewer
+            nodeStatuses={nodeStatuses}
+            executionStatus={executionStatus}
+            totals={totals}
+            isRunning={isRunning}
+            isConnected={isConnected}
+            onClose={handleCloseExecViewer}
+          />
+        )}
       </div>
 
-      {selectedNode && (
+      {selectedNode && !isRunning && (
         <NodePropertiesPanel
           node={selectedNode}
           onChange={handleNodeDataChange}
           onClose={() => setSelectedNode(null)}
+        />
+      )}
+
+      {showBudgetModal && (
+        <BudgetConfigModal
+          onConfirm={handleExecute}
+          onCancel={() => setShowBudgetModal(false)}
         />
       )}
     </div>

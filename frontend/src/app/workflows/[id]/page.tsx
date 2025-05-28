@@ -75,6 +75,7 @@ export default function EditWorkflowPage() {
         initialData={workflow.graph_data}
         onSave={handleSave}
         saving={saving}
+        workflowId={id}
       />
     </div>
   );
