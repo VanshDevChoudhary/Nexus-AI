@@ -32,8 +32,16 @@ class RetryHandler:
         self.config = config or RetryConfig()
 
     async def execute(
-        self, fn: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any
+        self,
+        fn: Callable[..., Awaitable[Any]],
+        *args: Any,
+        on_attempt_fail: Callable[[int, str, int], None] | None = None,
+        **kwargs: Any,
     ) -> RetryResult:
+        """
+        on_attempt_fail(attempt_number, error_str, retries_remaining) is called
+        after each failed attempt, before the backoff sleep.
+        """
         last_error: str = ""
         attempts = 0
 
@@ -44,9 +52,12 @@ class RetryHandler:
                 return RetryResult(success=True, result=result, attempts=attempts)
             except Exception as exc:
                 last_error = str(exc)
+                remaining = self.config.max_retries - attempt
                 logger.warning(
                     f"Attempt {attempts}/{self.config.max_retries + 1} failed: {last_error}"
                 )
+                if on_attempt_fail:
+                    on_attempt_fail(attempts, last_error, remaining)
                 if attempt < self.config.max_retries:
                     delay = min(self.config.base_delay * (2 ** attempt), MAX_BACKOFF)
                     await asyncio.sleep(delay)

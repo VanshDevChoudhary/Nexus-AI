@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.adapters.anthropic_adapter import AnthropicAdapter
 from src.adapters.base import BaseLLMAdapter, LLMResponse
 from src.adapters.openai_adapter import OpenAIAdapter
+from src.engine import events
 from src.engine.backtrack import (
     DependencyFailureHandler,
     FallbackHandler,
@@ -106,11 +107,12 @@ async def _execute_agent_with_recovery(
     provider = node_config.get("provider", "openai")
     model = node_config.get("model", "gpt-4o")
     system_prompt = node_config.get("system_prompt", "")
+    agent_name = node_config.get("name", node_id)
 
     agent_exec = AgentExecution(
         execution_id=execution_id,
         agent_node_id=node_id,
-        agent_name=node_config.get("name", node_id),
+        agent_name=agent_name,
         status="running",
         provider=provider,
         model_used=model,
@@ -144,13 +146,25 @@ async def _execute_agent_with_recovery(
     db.add(agent_exec)
     await db.flush()
 
+    events.agent_started(execution_id, node_id, agent_name, parallel_group)
+
     adapter = _get_adapter(provider)
 
     max_retries = node_config.get("max_retries", 2)
     retry_handler = RetryHandler(RetryConfig(max_retries=max_retries))
 
+    def _on_attempt_fail(attempt: int, error_str: str, remaining: int) -> None:
+        will_retry = remaining > 0
+        events.agent_failed(
+            execution_id, node_id, agent_name,
+            error_str, will_retry, remaining,
+        )
+        if will_retry:
+            events.agent_retrying(execution_id, node_id, agent_name, attempt)
+
     retry_result = await retry_handler.execute(
         _call_llm, adapter, prompt, system_prompt, node_config,
+        on_attempt_fail=_on_attempt_fail,
     )
 
     if retry_result.success:
@@ -165,13 +179,19 @@ async def _execute_agent_with_recovery(
         agent_exec.completed_at = datetime.now(timezone.utc)
         await db.flush()
 
+        events.agent_completed(
+            execution_id, node_id, agent_name,
+            llm_resp.tokens.prompt, llm_resp.tokens.completion,
+            llm_resp.cost, llm_resp.latency_ms,
+        )
+
         # memory store (after execution)
         store_key = node_config.get("memory_store_key")
         if store_key:
             try:
                 meta = {
                     "agent_node_id": node_id,
-                    "agent_name": node_config.get("name", node_id),
+                    "agent_name": agent_name,
                 }
                 await memory_store(
                     db, execution_id, store_key, llm_resp.text,
@@ -184,7 +204,7 @@ async def _execute_agent_with_recovery(
             "node_id": node_id,
             "status": "completed",
             "text": llm_resp.text,
-            "agent_name": node_config.get("name", node_id),
+            "agent_name": agent_name,
             "tokens_prompt": llm_resp.tokens.prompt,
             "tokens_completion": llm_resp.tokens.completion,
             "cost": llm_resp.cost,
@@ -198,11 +218,16 @@ async def _execute_agent_with_recovery(
     agent_exec.completed_at = datetime.now(timezone.utc)
     await db.flush()
 
-    # check for fallback
     if FallbackHandler.should_fallback(node_config):
         fallback_id = FallbackHandler.get_fallback_id(node_config)
         assert fallback_id is not None
         fallback_cfg = node_configs.get(fallback_id, {})
+
+        events.agent_fallback(
+            execution_id, node_id, fallback_id,
+            fallback_cfg.get("name", fallback_id),
+            "Max retries exhausted",
+        )
 
         fb_result = await _execute_fallback(
             db=db,
@@ -239,11 +264,12 @@ async def _execute_fallback(
     provider = fallback_config.get("provider", "openai")
     model = fallback_config.get("model", "gpt-4o")
     system_prompt = fallback_config.get("system_prompt", "")
+    fb_name = fallback_config.get("name", fallback_node_id)
 
     fb_exec = AgentExecution(
         execution_id=execution_id,
         agent_node_id=fallback_node_id,
-        agent_name=fallback_config.get("name", fallback_node_id),
+        agent_name=fb_name,
         status="running",
         provider=provider,
         model_used=model,
@@ -264,6 +290,8 @@ async def _execute_fallback(
     db.add(fb_exec)
     await db.flush()
 
+    events.agent_started(execution_id, fallback_node_id, fb_name, parallel_group)
+
     try:
         adapter = _get_adapter(provider)
         result: LLMResponse = await adapter.complete(
@@ -279,11 +307,17 @@ async def _execute_fallback(
         fb_exec.completed_at = datetime.now(timezone.utc)
         await db.flush()
 
+        events.agent_completed(
+            execution_id, fallback_node_id, fb_name,
+            result.tokens.prompt, result.tokens.completion,
+            result.cost, result.latency_ms,
+        )
+
         return {
             "node_id": original_node_id,
             "status": "completed",
             "text": result.text,
-            "agent_name": fallback_config.get("name", fallback_node_id),
+            "agent_name": fb_name,
             "tokens_prompt": result.tokens.prompt,
             "tokens_completion": result.tokens.completion,
             "cost": result.cost,
@@ -296,6 +330,11 @@ async def _execute_fallback(
         fb_exec.error_message = str(exc)
         fb_exec.completed_at = datetime.now(timezone.utc)
         await db.flush()
+
+        events.agent_failed(
+            execution_id, fallback_node_id, fb_name,
+            str(exc), False, 0,
+        )
 
         return {
             "node_id": original_node_id,
@@ -347,12 +386,14 @@ async def execute_workflow(
 
     for group in plan.groups:
         if budget_halted:
+            not_run_ids = []
             for agent_entry in group.agents:
                 nid = agent_entry.node_id
+                nname = node_configs.get(nid, {}).get("name", nid)
                 not_run_rec = AgentExecution(
                     execution_id=execution_id,
                     agent_node_id=nid,
-                    agent_name=node_configs.get(nid, {}).get("name", nid),
+                    agent_name=nname,
                     status="skipped",
                     provider=node_configs.get(nid, {}).get("provider", "openai"),
                     model_used=node_configs.get(nid, {}).get("model", "gpt-4o"),
@@ -361,6 +402,10 @@ async def execute_workflow(
                     error_message="not run — budget exceeded",
                 )
                 db.add(not_run_rec)
+                not_run_ids.append(nid)
+                events.agent_skipped(
+                    execution_id, nid, nname, "Budget exceeded",
+                )
                 order_counter += 1
             await db.flush()
             continue
@@ -370,10 +415,11 @@ async def execute_workflow(
             nid = agent_entry.node_id
 
             if nid in skipped_nodes:
+                nname = node_configs.get(nid, {}).get("name", nid)
                 skipped_rec = AgentExecution(
                     execution_id=execution_id,
                     agent_node_id=nid,
-                    agent_name=node_configs.get(nid, {}).get("name", nid),
+                    agent_name=nname,
                     status="skipped",
                     provider=node_configs.get(nid, {}).get("provider", "openai"),
                     model_used=node_configs.get(nid, {}).get("model", "gpt-4o"),
@@ -382,6 +428,10 @@ async def execute_workflow(
                     error_message="skipped — dependency failed",
                 )
                 db.add(skipped_rec)
+                events.agent_skipped(
+                    execution_id, nid, nname,
+                    "Dependency failed with no fallback",
+                )
                 order_counter += 1
                 continue
 
@@ -396,10 +446,11 @@ async def execute_workflow(
                             should_run = False
 
             if not should_run:
+                nname = node_configs.get(nid, {}).get("name", nid)
                 skipped_rec = AgentExecution(
                     execution_id=execution_id,
                     agent_node_id=nid,
-                    agent_name=node_configs.get(nid, {}).get("name", nid),
+                    agent_name=nname,
                     status="skipped",
                     provider=node_configs.get(nid, {}).get("provider", "openai"),
                     model_used=node_configs.get(nid, {}).get("model", "gpt-4o"),
@@ -409,6 +460,9 @@ async def execute_workflow(
                 )
                 db.add(skipped_rec)
                 skipped_nodes.add(nid)
+                events.agent_skipped(
+                    execution_id, nid, nname, "Condition not met",
+                )
                 order_counter += 1
                 continue
 
@@ -462,11 +516,34 @@ async def execute_workflow(
 
             budget_status = enforcer.check()
             if budget_status == "warning":
+                pct = 80
+                if enforcer.max_cost and enforcer.max_cost > 0:
+                    pct = int((enforcer.used_cost / enforcer.max_cost) * 100)
+                elif enforcer.max_tokens and enforcer.max_tokens > 0:
+                    pct = int((enforcer.used_tokens / enforcer.max_tokens) * 100)
+
+                events.budget_warning(
+                    execution_id,
+                    enforcer.used_tokens, enforcer.used_cost,
+                    enforcer.max_tokens, enforcer.max_cost,
+                    pct,
+                )
                 logger.warning(
                     f"Budget warning: {enforcer.used_cost:.4f}/{enforcer.max_cost} cost, "
                     f"{enforcer.used_tokens}/{enforcer.max_tokens} tokens"
                 )
             elif budget_status == "exceeded":
+                remaining_agents = []
+                for future_group in plan.groups[plan.groups.index(group) + 1:]:
+                    for a in future_group.agents:
+                        remaining_agents.append(a.node_id)
+
+                events.budget_exceeded(
+                    execution_id,
+                    enforcer.used_tokens, enforcer.used_cost,
+                    enforcer.max_tokens, enforcer.max_cost,
+                    remaining_agents,
+                )
                 logger.warning(f"Budget exceeded — halting after group {group.group}")
                 budget_halted = True
 
@@ -481,6 +558,22 @@ async def execute_workflow(
     )
     failed_agents = failed_q.scalars().all()
 
+    skipped_q = await db.execute(
+        select(AgentExecution).where(
+            AgentExecution.execution_id == execution_id,
+            AgentExecution.status == "skipped",
+        )
+    )
+    skipped_agents = skipped_q.scalars().all()
+
+    completed_q = await db.execute(
+        select(AgentExecution).where(
+            AgentExecution.execution_id == execution_id,
+            AgentExecution.status == "completed",
+        )
+    )
+    completed_agents = completed_q.scalars().all()
+
     if budget_halted:
         exec_record.status = "completed"
         exec_record.error_message = "Budget exceeded — execution halted early"
@@ -493,4 +586,22 @@ async def execute_workflow(
         exec_record.status = "completed"
 
     exec_record.completed_at = datetime.now(timezone.utc)
+
+    duration_ms = 0
+    if exec_record.started_at and exec_record.completed_at:
+        delta = exec_record.completed_at - exec_record.started_at
+        duration_ms = int(delta.total_seconds() * 1000)
+
+    events.execution_completed(
+        execution_id,
+        exec_record.status,
+        exec_record.total_tokens_prompt,
+        exec_record.total_tokens_completion,
+        exec_record.total_cost,
+        duration_ms,
+        len(completed_agents),
+        len(failed_agents),
+        len(skipped_agents),
+    )
+
     await db.commit()
