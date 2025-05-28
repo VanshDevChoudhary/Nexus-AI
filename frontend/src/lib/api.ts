@@ -1,4 +1,7 @@
 import type {
+  ExecuteWorkflowPayload,
+  ExecuteWorkflowResponse,
+  ExecutionDetailResponse,
   Workflow,
   WorkflowCreatePayload,
   WorkflowListResponse,
@@ -75,4 +78,25 @@ export async function updateWorkflow(
 
 export async function deleteWorkflow(id: string): Promise<void> {
   await request(`/api/v1/workflows/${id}`, { method: "DELETE" });
+}
+
+export async function executeWorkflow(
+  workflowId: string,
+  payload?: ExecuteWorkflowPayload,
+): Promise<ExecuteWorkflowResponse> {
+  const res = await request<{ data: ExecuteWorkflowResponse }>(
+    `/api/v1/workflows/${workflowId}/execute`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload || {}),
+    },
+  );
+  return res.data;
+}
+
+export async function getExecution(executionId: string): Promise<ExecutionDetailResponse> {
+  const res = await request<{ data: ExecutionDetailResponse }>(
+    `/api/v1/executions/${executionId}`,
+  );
+  return res.data;
 }
