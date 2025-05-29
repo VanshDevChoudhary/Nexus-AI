@@ -220,6 +220,37 @@ export type WsEvent =
   | WsBudgetExceeded
   | WsExecutionCompleted;
 
+export interface AgentExecutionDetail {
+  id: string;
+  agent_node_id: string;
+  agent_name: string;
+  status: string;
+  provider: string;
+  model_used: string;
+  tokens_prompt: number;
+  tokens_completion: number;
+  cost: number;
+  latency_ms: number | null;
+  retries: number;
+  is_fallback: boolean;
+  execution_order: number;
+  parallel_group: number;
+  input_data: Record<string, unknown> | null;
+  output_data: Record<string, unknown> | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ExecutionPlanAgent {
+  node_id: string;
+  config: Record<string, unknown>;
+}
+
+export interface ExecutionPlanGroup {
+  group: number;
+  agents: ExecutionPlanAgent[];
+}
+
 export interface ExecutionDetailResponse {
   id: string;
   workflow_id: string;
@@ -234,23 +265,28 @@ export interface ExecutionDetailResponse {
     duration_ms: number | null;
   };
   estimated_cost: number | null;
-  agents: {
-    id: string;
-    agent_node_id: string;
-    agent_name: string;
-    status: string;
-    provider: string;
-    model_used: string;
-    tokens_prompt: number;
-    tokens_completion: number;
-    cost: number;
-    latency_ms: number | null;
-    retries: number;
-    is_fallback: boolean;
-    execution_order: number;
-    parallel_group: number;
-  }[];
+  execution_plan: { groups: ExecutionPlanGroup[] } | null;
+  agents: AgentExecutionDetail[];
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
+}
+
+export interface ExecutionListItem {
+  id: string;
+  status: string;
+  total_cost: number;
+  total_tokens: number;
+  agent_count: number;
+  duration_ms: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface ExecutionListResponse {
+  data: ExecutionListItem[];
+  total: number;
+  skip: number;
+  limit: number;
 }

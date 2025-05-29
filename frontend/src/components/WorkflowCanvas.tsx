@@ -7,6 +7,7 @@ import {
   useState,
   useRef,
 } from "react";
+import Link from "next/link";
 import ReactFlow, {
   addEdge,
   applyEdgeChanges,
@@ -153,6 +154,7 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
   const [showExecViewer, setShowExecViewer] = useState(false);
 
   const {
+    executionId,
     nodeStatuses,
     executionStatus,
     totals,
@@ -414,6 +416,17 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
               </button>
             </>
           )}
+          {workflowId && (
+            <>
+              <div className="w-px h-5 bg-zinc-700 mx-1" />
+              <Link
+                href={`/workflows/${workflowId}/executions`}
+                className="bg-zinc-800/90 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm"
+              >
+                History
+              </Link>
+            </>
+          )}
         </div>
 
         {execError && (
@@ -463,6 +476,8 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
             isRunning={isRunning}
             isConnected={isConnected}
             onClose={handleCloseExecViewer}
+            executionId={executionId}
+            workflowId={workflowId}
           />
         )}
       </div>

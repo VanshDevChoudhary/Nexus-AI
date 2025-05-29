@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import type { NodeStatus } from "@/hooks/useExecution";
 import type { ExecutionTotals } from "@/lib/types";
 
@@ -11,6 +12,8 @@ interface Props {
   isRunning: boolean;
   isConnected: boolean;
   onClose: () => void;
+  executionId?: string | null;
+  workflowId?: string;
 }
 
 export default function ExecutionViewer({
@@ -20,6 +23,8 @@ export default function ExecutionViewer({
   isRunning,
   isConnected,
   onClose,
+  executionId,
+  workflowId,
 }: Props) {
   const liveCost = useMemo(() => {
     let cost = 0;
@@ -44,6 +49,9 @@ export default function ExecutionViewer({
   }, [nodeStatuses]);
 
   const isDone = executionStatus === "completed" || executionStatus === "failed";
+  const detailUrl = workflowId && executionId
+    ? `/workflows/${workflowId}/executions/${executionId}`
+    : null;
 
   return (
     <>
@@ -138,6 +146,14 @@ export default function ExecutionViewer({
                 )}
               </div>
             </div>
+          )}
+          {detailUrl && (
+            <Link
+              href={detailUrl}
+              className="block mt-3 pt-2.5 border-t border-zinc-800 text-center text-xs text-blue-400 hover:text-blue-300 font-medium"
+            >
+              View Details
+            </Link>
           )}
         </div>
       )}

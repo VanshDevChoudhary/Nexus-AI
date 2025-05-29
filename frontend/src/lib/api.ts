@@ -2,6 +2,7 @@ import type {
   ExecuteWorkflowPayload,
   ExecuteWorkflowResponse,
   ExecutionDetailResponse,
+  ExecutionListResponse,
   Workflow,
   WorkflowCreatePayload,
   WorkflowListResponse,
@@ -99,4 +100,18 @@ export async function getExecution(executionId: string): Promise<ExecutionDetail
     `/api/v1/executions/${executionId}`,
   );
   return res.data;
+}
+
+export async function listExecutions(
+  workflowId: string,
+  skip = 0,
+  limit = 20,
+  status?: string,
+): Promise<ExecutionListResponse> {
+  const params = new URLSearchParams({
+    skip: String(skip),
+    limit: String(limit),
+  });
+  if (status) params.set("status", status);
+  return request(`/api/v1/workflows/${workflowId}/executions?${params}`);
 }
