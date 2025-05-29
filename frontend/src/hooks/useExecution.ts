@@ -19,6 +19,7 @@ export interface NodeStatus {
 }
 
 interface UseExecutionReturn {
+  executionId: string | null;
   nodeStatuses: Record<string, NodeStatus>;
   executionStatus: string | null;
   totals: ExecutionTotals | null;
@@ -162,6 +163,7 @@ export function useExecution(): UseExecutionReturn {
   }, []);
 
   return {
+    executionId,
     nodeStatuses,
     executionStatus,
     totals,
