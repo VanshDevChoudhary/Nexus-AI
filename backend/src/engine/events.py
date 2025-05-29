@@ -23,7 +23,7 @@ def _now_iso() -> str:
 
 def _publish(execution_id: uuid.UUID, event: dict[str, Any]) -> None:
     try:
-        r = redis.from_url(settings.redis_url)
+        r = redis.from_url(settings.redis_url)  # type: ignore[no-untyped-call]
         r.publish(_channel(execution_id), json.dumps(event))
         r.close()
     except Exception as exc:
