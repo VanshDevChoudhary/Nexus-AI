@@ -48,7 +48,8 @@ export default function ExecutionDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-57px)] text-zinc-500">
+      <div className="flex items-center justify-center h-[calc(100vh-57px)] gap-3 text-zinc-500">
+        <div className="spinner" />
         Loading execution...
       </div>
     );

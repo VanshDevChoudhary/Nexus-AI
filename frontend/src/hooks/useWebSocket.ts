@@ -54,7 +54,7 @@ export function useWebSocket(
         setIsConnected(false);
         wsRef.current = null;
 
-        // normal close or execution done
+        // TODO: surface close reason in the execution viewer UI
         if (e.code === 1000 || e.code === 4004) return;
 
         // reconnect with exponential backoff

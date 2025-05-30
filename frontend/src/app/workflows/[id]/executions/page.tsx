@@ -103,7 +103,10 @@ export default function ExecutionHistoryPage() {
       )}
 
       {loading && executions.length === 0 && (
-        <div className="text-zinc-500 text-sm py-12 text-center">Loading...</div>
+        <div className="flex items-center gap-3 text-zinc-500 text-sm py-12 justify-center">
+          <div className="spinner" />
+          Loading executions...
+        </div>
       )}
 
       {!loading && executions.length === 0 && (

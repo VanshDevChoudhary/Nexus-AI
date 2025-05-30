@@ -5,3 +5,16 @@
 body {
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #3f3f46;
+  border-top-color: #a1a1aa;
+  border-radius: 50%;
+  animation: spin-slow 0.6s linear infinite;
+}

@@ -59,7 +59,10 @@ export default function Home() {
       )}
 
       {loading && (
-        <div className="text-zinc-500 text-sm">Loading workflows...</div>
+        <div className="flex items-center gap-3 text-zinc-500 text-sm py-8 justify-center">
+          <div className="spinner" />
+          Loading workflows...
+        </div>
       )}
 
       {!loading && workflows.length === 0 && (

@@ -2,7 +2,6 @@
 
 import {
   useCallback,
-  useEffect,
   useMemo,
   useState,
   useRef,
@@ -240,11 +239,6 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
     stopListening();
   }, [stopListening]);
 
-  // auto-dismiss exec viewer UI cleanup when execution completes + user saw it
-  useEffect(() => {
-    // keep viewer open, user can dismiss manually
-  }, [executionStatus]);
-
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       setNodes((nds) => applyNodeChanges(changes, nds));
@@ -410,9 +404,14 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
               <button
                 onClick={handleRunClick}
                 disabled={isRunning}
-                className="bg-violet-600/90 hover:bg-violet-500 text-white px-4 py-1.5 rounded text-xs font-semibold backdrop-blur-sm disabled:opacity-50"
+                className="bg-violet-600/90 hover:bg-violet-500 text-white px-4 py-1.5 rounded text-xs font-semibold backdrop-blur-sm disabled:opacity-50 inline-flex items-center gap-1.5"
               >
-                {isRunning ? "Running..." : "Run"}
+                {isRunning ? (
+                  <>
+                    <span className="spinner !w-3 !h-3 !border-[1.5px] inline-block" />
+                    Running...
+                  </>
+                ) : "Run"}
               </button>
             </>
           )}
