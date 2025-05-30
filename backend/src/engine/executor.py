@@ -122,6 +122,7 @@ async def _execute_agent_with_recovery(
     )
 
     # memory recall (before execution)
+    # TODO: include embedding API cost in budget tracking
     recalled_memories: list[dict[str, Any]] | None = None
     recall_query = node_config.get("memory_recall_query")
     if recall_query:
