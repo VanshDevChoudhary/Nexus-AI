@@ -2,7 +2,7 @@
 
 ## 1. Overview
 **Project:** nexus-ai
-**Date:** 2026-02-25
+**Date:** 2025-04-20
 **Based on PRD Version:** 1.0
 
 ### 1.1 Technical Summary
@@ -109,7 +109,7 @@ nexus-ai is a dual-stack application: a Next.js 14 frontend for the visual workf
 ### 4.1 API Design
 - **Style:** REST
 - **Base URL:** `/api/v1/`
-- **No authentication in V1** — single user portfolio project
+- **No authentication in V1** — single user, scoped for the initial release
 - **Request/Response format:** JSON everywhere. Pydantic models for validation.
 
 ### 4.2 Endpoint Summary
@@ -318,7 +318,6 @@ If/when auth is added (V3+), the plan would be:
 ## 14. Directory Structure (Full Project)
 ```
 nexus-ai/
-├── CLAUDE.md
 ├── LICENSE
 ├── README.md
 ├── docker-compose.yml
@@ -327,12 +326,9 @@ nexus-ai/
 │   └── workflows/
 │       └── ci.yml
 ├── docs/
-│   ├── PRD.md
 │   ├── TRD.md
 │   ├── API_SPEC.md
 │   ├── DB_SCHEMA.md
-│   ├── BUILD_ORDER.md
-│   ├── CC_PROMPTS.md
 │   ├── EXECUTION_ENGINE.md
 │   └── BUDGET_PLANNER.md
 ├── frontend/

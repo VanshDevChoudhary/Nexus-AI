@@ -331,7 +331,7 @@ Events are published at every state transition: agent start, complete, fail, ret
 | asyncio.gather over thread pool | LLM calls are I/O-bound (waiting for HTTP responses). asyncio is the right model — no GIL concerns, efficient event loop. |
 | No fallback chains | Fallback-of-fallback-of-fallback adds complexity with diminishing returns. One level of fallback covers 95% of cases. |
 | Partial execution over all-or-nothing | A 10-agent workflow where 1 optional branch fails should still produce results. Real systems are resilient, not brittle. |
-| Store execution plan in DB | Enables the execution detail view to show what the planner decided, not just what happened. Useful for debugging and the portfolio showcase. |
+| Store execution plan in DB | Enables the execution detail view to show what the planner decided, not just what happened. Useful for debugging and post-execution analysis. |
 
 ---
 

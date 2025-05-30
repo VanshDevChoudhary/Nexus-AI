@@ -3,7 +3,7 @@
 ## Project: nexus-ai
 ## Database: PostgreSQL 16 + pgvector
 ## ORM: SQLAlchemy 2.0 (async) + Alembic
-## Date: 2026-02-25
+## Date: 2025-04-20
 
 ---
 

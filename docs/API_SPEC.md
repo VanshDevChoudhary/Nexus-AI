@@ -3,13 +3,13 @@
 ## Project: nexus-ai
 ## Base URL: `/api/v1`
 ## Authentication: None (V1 — single user)
-## Date: 2026-02-25
+## Date: 2025-04-25
 
 ---
 
 ## General Conventions
 - All request/response bodies are JSON
-- Dates are ISO 8601 with timezone: `2026-02-25T14:30:00+00:00`
+- Dates are ISO 8601 with timezone: `2025-04-25T14:30:00+00:00`
 - UUIDs for all IDs
 - Pagination: `?skip=0&limit=20` (default limit=20, max=100)
 - Sorting: `?sort=created_at&order=desc` (default)
@@ -81,13 +81,13 @@
       "description": "Summarizes and analyzes research papers",
       "node_count": 5,
       "edge_count": 4,
-      "created_at": "2026-02-25T10:00:00+00:00",
-      "updated_at": "2026-02-25T12:30:00+00:00",
+      "created_at": "2025-04-25T10:00:00+00:00",
+      "updated_at": "2025-04-25T12:30:00+00:00",
       "last_execution": {
         "id": "uuid",
         "status": "completed",
         "total_cost": 0.045,
-        "completed_at": "2026-02-25T12:31:00+00:00"
+        "completed_at": "2025-04-25T12:31:00+00:00"
       }
     }
   ],
@@ -153,8 +153,8 @@
     "name": "Research Pipeline",
     "description": "Optional description",
     "graph_data": { ... },
-    "created_at": "2026-02-25T10:00:00+00:00",
-    "updated_at": "2026-02-25T10:00:00+00:00"
+    "created_at": "2025-04-25T10:00:00+00:00",
+    "updated_at": "2025-04-25T10:00:00+00:00"
   }
 }
 ```
@@ -179,8 +179,8 @@
     "name": "Research Pipeline",
     "description": "Optional description",
     "graph_data": { ... },
-    "created_at": "2026-02-25T10:00:00+00:00",
-    "updated_at": "2026-02-25T12:30:00+00:00"
+    "created_at": "2025-04-25T10:00:00+00:00",
+    "updated_at": "2025-04-25T12:30:00+00:00"
   }
 }
 ```
@@ -368,9 +368,9 @@ All fields optional — only provided fields are updated.
         "completed_at": "..."
       }
     ],
-    "started_at": "2026-02-25T12:30:00+00:00",
-    "completed_at": "2026-02-25T12:30:18+00:00",
-    "created_at": "2026-02-25T12:29:59+00:00"
+    "started_at": "2025-04-25T12:30:00+00:00",
+    "completed_at": "2025-04-25T12:30:18+00:00",
+    "created_at": "2025-04-25T12:29:59+00:00"
   }
 }
 ```
@@ -439,7 +439,7 @@ All fields optional — only provided fields are updated.
   "agent_id": "node_1",
   "agent_name": "Summarizer",
   "parallel_group": 0,
-  "timestamp": "2026-02-25T12:30:01+00:00"
+  "timestamp": "2025-04-25T12:30:01+00:00"
 }
 
 // Agent completed successfully
@@ -450,7 +450,7 @@ All fields optional — only provided fields are updated.
   "tokens": { "prompt": 5000, "completion": 1200 },
   "cost": 0.02,
   "latency_ms": 3200,
-  "timestamp": "2026-02-25T12:30:04+00:00"
+  "timestamp": "2025-04-25T12:30:04+00:00"
 }
 
 // Agent failed
