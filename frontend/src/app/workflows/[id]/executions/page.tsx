@@ -7,14 +7,14 @@ import { listExecutions, getWorkflow } from "@/lib/api";
 import type { ExecutionListItem } from "@/lib/types";
 
 const STATUS_BADGE: Record<string, { bg: string; text: string }> = {
-  completed: { bg: "bg-emerald-900/50", text: "text-emerald-300" },
-  failed: { bg: "bg-red-900/50", text: "text-red-300" },
-  running: { bg: "bg-blue-900/50", text: "text-blue-300" },
-  pending: { bg: "bg-yellow-900/50", text: "text-yellow-300" },
+  completed: { bg: "bg-emerald-100 dark:bg-emerald-900/50", text: "text-emerald-700 dark:text-emerald-300" },
+  failed: { bg: "bg-red-100 dark:bg-red-900/50", text: "text-red-700 dark:text-red-300" },
+  running: { bg: "bg-blue-100 dark:bg-blue-900/50", text: "text-blue-700 dark:text-blue-300" },
+  pending: { bg: "bg-yellow-100 dark:bg-yellow-900/50", text: "text-yellow-700 dark:text-yellow-300" },
 };
 
 function formatDuration(ms: number | null): string {
-  if (ms === null) return "—";
+  if (ms === null) return "\u2014";
   if (ms < 1000) return `${ms}ms`;
   const secs = ms / 1000;
   if (secs < 60) return `${secs.toFixed(1)}s`;
@@ -79,25 +79,25 @@ export default function ExecutionHistoryPage() {
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => router.push(`/workflows/${workflowId}`)}
-          className="text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
         >
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M12.5 15l-5-5 5-5" />
           </svg>
         </button>
         <div>
-          <h1 className="text-xl font-bold">Execution History</h1>
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Execution History</h1>
           {workflowName && (
             <p className="text-zinc-500 text-sm">{workflowName}</p>
           )}
         </div>
-        <span className="text-zinc-600 text-sm ml-auto">
+        <span className="text-zinc-400 dark:text-zinc-600 text-sm ml-auto">
           {total} execution{total !== 1 ? "s" : ""}
         </span>
       </div>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-800 text-red-300 rounded-md px-4 py-3 text-sm mb-4">
+        <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 rounded-md px-4 py-3 text-sm mb-4">
           {error}
         </div>
       )}
@@ -117,10 +117,10 @@ export default function ExecutionHistoryPage() {
       )}
 
       {executions.length > 0 && (
-        <div className="border border-zinc-800 rounded-lg overflow-hidden">
+        <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-zinc-900/80 text-zinc-400 text-xs uppercase tracking-wider">
+              <tr className="bg-zinc-50 dark:bg-zinc-900/80 text-zinc-500 dark:text-zinc-400 text-xs uppercase tracking-wider">
                 <th className="text-left px-4 py-3 font-medium">Status</th>
                 <th className="text-right px-4 py-3 font-medium">Cost</th>
                 <th className="text-right px-4 py-3 font-medium">Tokens</th>
@@ -129,11 +129,11 @@ export default function ExecutionHistoryPage() {
                 <th className="text-right px-4 py-3 font-medium">Date</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800/50">
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
               {executions.map((exec) => {
                 const badge = STATUS_BADGE[exec.status] || {
-                  bg: "bg-zinc-800",
-                  text: "text-zinc-400",
+                  bg: "bg-zinc-100 dark:bg-zinc-800",
+                  text: "text-zinc-500 dark:text-zinc-400",
                 };
                 return (
                   <tr
@@ -143,7 +143,7 @@ export default function ExecutionHistoryPage() {
                         `/workflows/${workflowId}/executions/${exec.id}`,
                       )
                     }
-                    className="hover:bg-zinc-900/60 cursor-pointer transition-colors"
+                    className="hover:bg-zinc-50 dark:hover:bg-zinc-900/60 cursor-pointer transition-colors"
                   >
                     <td className="px-4 py-3">
                       <span
@@ -152,19 +152,19 @@ export default function ExecutionHistoryPage() {
                         {exec.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-zinc-300">
+                    <td className="px-4 py-3 text-right font-mono text-zinc-700 dark:text-zinc-300">
                       ${exec.total_cost.toFixed(4)}
                     </td>
-                    <td className="px-4 py-3 text-right text-zinc-400">
+                    <td className="px-4 py-3 text-right text-zinc-500 dark:text-zinc-400">
                       {exec.total_tokens.toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 text-right text-zinc-400">
+                    <td className="px-4 py-3 text-right text-zinc-500 dark:text-zinc-400">
                       {exec.agent_count}
                     </td>
-                    <td className="px-4 py-3 text-right text-zinc-400">
+                    <td className="px-4 py-3 text-right text-zinc-500 dark:text-zinc-400">
                       {formatDuration(exec.duration_ms)}
                     </td>
-                    <td className="px-4 py-3 text-right text-zinc-500">
+                    <td className="px-4 py-3 text-right text-zinc-400 dark:text-zinc-500">
                       {formatDate(exec.created_at)}
                     </td>
                   </tr>
@@ -180,7 +180,7 @@ export default function ExecutionHistoryPage() {
           <button
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0}
-            className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-xs bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Previous
           </button>
@@ -190,7 +190,7 @@ export default function ExecutionHistoryPage() {
           <button
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
             disabled={page >= totalPages - 1}
-            className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-xs bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Next
           </button>

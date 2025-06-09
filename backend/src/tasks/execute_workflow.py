@@ -5,8 +5,10 @@ import logging
 import uuid
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from src.celery_app import celery
-from src.db import async_session
+from src.config import settings
 from src.engine.executor import execute_workflow
 from src.engine.planner import AgentPlanEntry, ExecutionPlan, ParallelGroup
 
@@ -43,12 +45,18 @@ def execute_workflow_task(
     plan = _rebuild_plan(plan_dict)
 
     async def _run() -> None:
-        async with async_session() as db:
-            await execute_workflow(
-                db, eid, plan, graph_data, input_data,
-                budget_max_tokens=budget_max_tokens,
-                budget_max_cost=budget_max_cost,
-            )
+        task_engine = create_async_engine(settings.database_url, echo=False)
+        task_session = async_sessionmaker(task_engine, class_=AsyncSession, expire_on_commit=False)
+        try:
+            async with task_session() as db:
+                await execute_workflow(
+                    db, eid, plan, graph_data, input_data,
+                    budget_max_tokens=budget_max_tokens,
+                    budget_max_cost=budget_max_cost,
+                    session_factory=task_session,
+                )
+        finally:
+            await task_engine.dispose()
 
     loop = asyncio.new_event_loop()
     try:

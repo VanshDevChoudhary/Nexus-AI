@@ -20,6 +20,7 @@ frontend/tsconfig.tsbuildinfo
 # OS
 .DS_Store
 Thumbs.db
+
 # Local
 Working/
 stitch/

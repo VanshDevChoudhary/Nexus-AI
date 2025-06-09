@@ -9,6 +9,11 @@ from anthropic.types import TextBlock
 from src.adapters.base import BaseLLMAdapter, LLMResponse, TokenUsage, calculate_cost
 from src.config import settings
 
+_MODEL_MAP: dict[str, str] = {
+    "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
+    "claude-3-haiku": "claude-3-haiku-20240307",
+}
+
 
 class AnthropicAdapter(BaseLLMAdapter):
     def __init__(self) -> None:
@@ -21,12 +26,13 @@ class AnthropicAdapter(BaseLLMAdapter):
         config: dict[str, Any],
     ) -> LLMResponse:
         model = config.get("model", "claude-3.5-sonnet")
+        api_model = _MODEL_MAP.get(model, model)
         temperature = config.get("temperature", 0.7)
         max_tokens = config.get("max_tokens", 1000)
 
         start = time.monotonic()
         response = await self.client.messages.create(
-            model=model,
+            model=api_model,
             max_tokens=max_tokens,
             temperature=temperature,
             system=system_prompt if system_prompt else "",

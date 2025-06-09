@@ -8,6 +8,8 @@ interface Props {
   onCancel: () => void;
 }
 
+const inputClass = "w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-blue-500 dark:focus:border-zinc-500";
+
 export default function BudgetConfigModal({ onConfirm, onCancel }: Props) {
   const [maxTokens, setMaxTokens] = useState("");
   const [maxCost, setMaxCost] = useState("");
@@ -26,36 +28,36 @@ export default function BudgetConfigModal({ onConfirm, onCancel }: Props) {
   }, [maxTokens, maxCost, userQuery, onConfirm]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl w-full max-w-md p-5">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">Run Workflow</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm">
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl w-full max-w-md p-5">
+        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Run Workflow</h2>
 
         <div className="space-y-3">
           <div>
-            <label className="block text-xs text-zinc-400 mb-1">User Input (optional)</label>
+            <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">User Input (optional)</label>
             <textarea
               value={userQuery}
               onChange={(e) => setUserQuery(e.target.value)}
               placeholder="Provide initial context for the workflow..."
               rows={3}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+              className={inputClass}
             />
           </div>
 
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="block text-xs text-zinc-400 mb-1">Max Tokens</label>
+              <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Max Tokens</label>
               <input
                 type="number"
                 value={maxTokens}
                 onChange={(e) => setMaxTokens(e.target.value)}
                 placeholder="No limit"
                 min={0}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+                className={inputClass}
               />
             </div>
             <div className="flex-1">
-              <label className="block text-xs text-zinc-400 mb-1">Max Cost ($)</label>
+              <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Max Cost ($)</label>
               <input
                 type="number"
                 value={maxCost}
@@ -63,7 +65,7 @@ export default function BudgetConfigModal({ onConfirm, onCancel }: Props) {
                 placeholder="No limit"
                 min={0}
                 step={0.01}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+                className={inputClass}
               />
             </div>
           </div>
@@ -72,7 +74,7 @@ export default function BudgetConfigModal({ onConfirm, onCancel }: Props) {
         <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={onCancel}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 rounded"
+            className="px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded"
           >
             Cancel
           </button>

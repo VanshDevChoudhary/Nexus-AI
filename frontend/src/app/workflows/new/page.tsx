@@ -43,19 +43,19 @@ export default function NewWorkflowPage() {
       <WorkflowCanvas onSave={handleSave} saving={saving} />
 
       {showNameModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 shadow-xl">
-            <h2 className="text-lg font-semibold text-zinc-100 mb-4">
+        <div className="fixed inset-0 bg-black/40 dark:bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 w-96 shadow-xl">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
               Name your workflow
             </h2>
             {error && (
-              <p className="text-red-400 text-sm mb-3">{error}</p>
+              <p className="text-red-600 dark:text-red-400 text-sm mb-3">{error}</p>
             )}
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500 mb-4"
+              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500 dark:focus:border-zinc-500 mb-4"
               placeholder="e.g. Research Pipeline"
               autoFocus
               onKeyDown={(e) => {
@@ -65,7 +65,7 @@ export default function NewWorkflowPage() {
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowNameModal(false)}
-                className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200"
+                className="px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
               >
                 Cancel
               </button>

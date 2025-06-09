@@ -52,10 +52,10 @@ export default function EditWorkflowPage() {
   if (error && !workflow) {
     return (
       <div className="max-w-md mx-auto mt-20 text-center">
-        <p className="text-red-400 mb-4">{error}</p>
+        <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
         <button
           onClick={() => router.push("/")}
-          className="text-zinc-400 hover:text-zinc-200 text-sm"
+          className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 text-sm"
         >
           Back to workflows
         </button>
@@ -67,10 +67,9 @@ export default function EditWorkflowPage() {
 
   return (
     <div className="h-[calc(100vh-57px)] relative">
-      {/* header bar */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-3">
-        <span className="text-sm text-zinc-400">{workflow.name}</span>
-        {error && <span className="text-xs text-red-400">{error}</span>}
+        <span className="text-sm text-zinc-500 dark:text-zinc-400">{workflow.name}</span>
+        {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
       </div>
       <WorkflowCanvas
         initialData={workflow.graph_data}

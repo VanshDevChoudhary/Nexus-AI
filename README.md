@@ -66,7 +66,6 @@ The short version:
 
 ## API
 
-
 ```
 GET    /api/v1/health                     Health check
 GET    /api/v1/workflows                  List workflows

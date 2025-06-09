@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.adapters.anthropic_adapter import AnthropicAdapter
 from src.adapters.base import BaseLLMAdapter, LLMResponse
@@ -93,7 +93,7 @@ async def _call_llm(
 
 
 async def _execute_agent_with_recovery(
-    db: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
     execution_id: uuid.UUID,
     node_id: str,
     node_config: dict[str, Any],
@@ -103,155 +103,156 @@ async def _execute_agent_with_recovery(
     execution_order: int,
     node_configs: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    """Run one agent with retry logic and fallback support."""
+    """Run one agent with retry logic and fallback support. Uses its own DB session."""
     provider = node_config.get("provider", "openai")
     model = node_config.get("model", "gpt-4o")
     system_prompt = node_config.get("system_prompt", "")
     agent_name = node_config.get("name", node_id)
 
-    agent_exec = AgentExecution(
-        execution_id=execution_id,
-        agent_node_id=node_id,
-        agent_name=agent_name,
-        status="running",
-        provider=provider,
-        model_used=model,
-        parallel_group=parallel_group,
-        execution_order=execution_order,
-        started_at=datetime.now(timezone.utc),
-    )
-
-    # memory recall (before execution)
-    # TODO: include embedding API cost in budget tracking
-    recalled_memories: list[dict[str, Any]] | None = None
-    recall_query = node_config.get("memory_recall_query")
-    if recall_query:
-        try:
-            results = await memory_recall(db, execution_id, recall_query)
-            if results:
-                recalled_memories = [
-                    {"key": r.key, "text": r.text, "similarity": r.similarity}
-                    for r in results
-                ]
-                logger.info(f"Recalled {len(results)} memories for {node_id}")
-        except Exception as exc:
-            logger.warning(f"Memory recall failed for {node_id}: {exc}")
-
-    prompt = _build_agent_prompt(node_config, dependency_outputs, input_data, recalled_memories)
-    agent_exec.input_data = {
-        "prompt": prompt,
-        "system_prompt": system_prompt,
-        "dependency_outputs": dependency_outputs,
-    }
-
-    db.add(agent_exec)
-    await db.flush()
-
-    events.agent_started(execution_id, node_id, agent_name, parallel_group)
-
-    adapter = _get_adapter(provider)
-
-    max_retries = node_config.get("max_retries", 2)
-    retry_handler = RetryHandler(RetryConfig(max_retries=max_retries))
-
-    def _on_attempt_fail(attempt: int, error_str: str, remaining: int) -> None:
-        will_retry = remaining > 0
-        events.agent_failed(
-            execution_id, node_id, agent_name,
-            error_str, will_retry, remaining,
+    async with session_factory() as db:
+        agent_exec = AgentExecution(
+            execution_id=execution_id,
+            agent_node_id=node_id,
+            agent_name=agent_name,
+            status="running",
+            provider=provider,
+            model_used=model,
+            parallel_group=parallel_group,
+            execution_order=execution_order,
+            started_at=datetime.now(timezone.utc),
         )
-        if will_retry:
-            events.agent_retrying(execution_id, node_id, agent_name, attempt)
 
-    retry_result = await retry_handler.execute(
-        _call_llm, adapter, prompt, system_prompt, node_config,
-        on_attempt_fail=_on_attempt_fail,
-    )
+        # memory recall (before execution)
+        # TODO: include embedding API cost in budget tracking
+        recalled_memories: list[dict[str, Any]] | None = None
+        recall_query = node_config.get("memory_recall_query")
+        if recall_query:
+            try:
+                results = await memory_recall(db, execution_id, recall_query)
+                if results:
+                    recalled_memories = [
+                        {"key": r.key, "text": r.text, "similarity": r.similarity}
+                        for r in results
+                    ]
+                    logger.info(f"Recalled {len(results)} memories for {node_id}")
+            except Exception as exc:
+                logger.warning(f"Memory recall failed for {node_id}: {exc}")
 
-    if retry_result.success:
-        llm_resp: LLMResponse = retry_result.result
-        agent_exec.status = "completed"
-        agent_exec.output_data = {"text": llm_resp.text}
-        agent_exec.tokens_prompt = llm_resp.tokens.prompt
-        agent_exec.tokens_completion = llm_resp.tokens.completion
-        agent_exec.cost = llm_resp.cost
-        agent_exec.latency_ms = llm_resp.latency_ms
-        agent_exec.retries = retry_result.attempts - 1
-        agent_exec.completed_at = datetime.now(timezone.utc)
+        prompt = _build_agent_prompt(node_config, dependency_outputs, input_data, recalled_memories)
+        agent_exec.input_data = {
+            "prompt": prompt,
+            "system_prompt": system_prompt,
+            "dependency_outputs": dependency_outputs,
+        }
+
+        db.add(agent_exec)
         await db.flush()
 
-        events.agent_completed(
-            execution_id, node_id, agent_name,
-            llm_resp.tokens.prompt, llm_resp.tokens.completion,
-            llm_resp.cost, llm_resp.latency_ms,
+        events.agent_started(execution_id, node_id, agent_name, parallel_group)
+
+        adapter = _get_adapter(provider)
+
+        max_retries = node_config.get("max_retries", 2)
+        retry_handler = RetryHandler(RetryConfig(max_retries=max_retries))
+
+        def _on_attempt_fail(attempt: int, error_str: str, remaining: int) -> None:
+            will_retry = remaining > 0
+            events.agent_failed(
+                execution_id, node_id, agent_name,
+                error_str, will_retry, remaining,
+            )
+            if will_retry:
+                events.agent_retrying(execution_id, node_id, agent_name, attempt)
+
+        retry_result = await retry_handler.execute(
+            _call_llm, adapter, prompt, system_prompt, node_config,
+            on_attempt_fail=_on_attempt_fail,
         )
 
-        # memory store (after execution)
-        store_key = node_config.get("memory_store_key")
-        if store_key:
-            try:
-                meta = {
-                    "agent_node_id": node_id,
-                    "agent_name": agent_name,
-                }
-                await memory_store(
-                    db, execution_id, store_key, llm_resp.text,
-                    metadata=meta,
-                )
-            except Exception as exc:
-                logger.warning(f"Memory store failed for {node_id}: {exc}")
+        if retry_result.success:
+            llm_resp: LLMResponse = retry_result.result
+            agent_exec.status = "completed"
+            agent_exec.output_data = {"text": llm_resp.text}
+            agent_exec.tokens_prompt = llm_resp.tokens.prompt
+            agent_exec.tokens_completion = llm_resp.tokens.completion
+            agent_exec.cost = llm_resp.cost
+            agent_exec.latency_ms = llm_resp.latency_ms
+            agent_exec.retries = retry_result.attempts - 1
+            agent_exec.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+
+            events.agent_completed(
+                execution_id, node_id, agent_name,
+                llm_resp.tokens.prompt, llm_resp.tokens.completion,
+                llm_resp.cost, llm_resp.latency_ms,
+            )
+
+            # memory store (after execution)
+            store_key = node_config.get("memory_store_key")
+            if store_key:
+                try:
+                    meta = {
+                        "agent_node_id": node_id,
+                        "agent_name": agent_name,
+                    }
+                    await memory_store(
+                        db, execution_id, store_key, llm_resp.text,
+                        metadata=meta,
+                    )
+                except Exception as exc:
+                    logger.warning(f"Memory store failed for {node_id}: {exc}")
+
+            return {
+                "node_id": node_id,
+                "status": "completed",
+                "text": llm_resp.text,
+                "agent_name": agent_name,
+                "tokens_prompt": llm_resp.tokens.prompt,
+                "tokens_completion": llm_resp.tokens.completion,
+                "cost": llm_resp.cost,
+            }
+
+        # retries exhausted — mark original as failed
+        logger.error(f"Agent {node_id} failed after {retry_result.attempts} attempts")
+        agent_exec.status = "failed"
+        agent_exec.error_message = retry_result.error
+        agent_exec.retries = retry_result.attempts - 1
+        agent_exec.completed_at = datetime.now(timezone.utc)
+        await db.commit()
+
+        if FallbackHandler.should_fallback(node_config):
+            fallback_id = FallbackHandler.get_fallback_id(node_config)
+            assert fallback_id is not None
+            fallback_cfg = node_configs.get(fallback_id, {})
+
+            events.agent_fallback(
+                execution_id, node_id, fallback_id,
+                fallback_cfg.get("name", fallback_id),
+                "Max retries exhausted",
+            )
+
+            fb_result = await _execute_fallback(
+                session_factory=session_factory,
+                execution_id=execution_id,
+                fallback_node_id=fallback_id,
+                original_node_id=node_id,
+                fallback_config=fallback_cfg,
+                dependency_outputs=dependency_outputs,
+                input_data=input_data,
+                parallel_group=parallel_group,
+                execution_order=execution_order,
+            )
+            return fb_result
 
         return {
             "node_id": node_id,
-            "status": "completed",
-            "text": llm_resp.text,
-            "agent_name": agent_name,
-            "tokens_prompt": llm_resp.tokens.prompt,
-            "tokens_completion": llm_resp.tokens.completion,
-            "cost": llm_resp.cost,
+            "status": "failed",
+            "error": retry_result.error,
         }
-
-    # retries exhausted — mark original as failed
-    logger.error(f"Agent {node_id} failed after {retry_result.attempts} attempts")
-    agent_exec.status = "failed"
-    agent_exec.error_message = retry_result.error
-    agent_exec.retries = retry_result.attempts - 1
-    agent_exec.completed_at = datetime.now(timezone.utc)
-    await db.flush()
-
-    if FallbackHandler.should_fallback(node_config):
-        fallback_id = FallbackHandler.get_fallback_id(node_config)
-        assert fallback_id is not None
-        fallback_cfg = node_configs.get(fallback_id, {})
-
-        events.agent_fallback(
-            execution_id, node_id, fallback_id,
-            fallback_cfg.get("name", fallback_id),
-            "Max retries exhausted",
-        )
-
-        fb_result = await _execute_fallback(
-            db=db,
-            execution_id=execution_id,
-            fallback_node_id=fallback_id,
-            original_node_id=node_id,
-            fallback_config=fallback_cfg,
-            dependency_outputs=dependency_outputs,
-            input_data=input_data,
-            parallel_group=parallel_group,
-            execution_order=execution_order,
-        )
-        return fb_result
-
-    return {
-        "node_id": node_id,
-        "status": "failed",
-        "error": retry_result.error,
-    }
 
 
 async def _execute_fallback(
-    db: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
     execution_id: uuid.UUID,
     fallback_node_id: str,
     original_node_id: str,
@@ -267,81 +268,82 @@ async def _execute_fallback(
     system_prompt = fallback_config.get("system_prompt", "")
     fb_name = fallback_config.get("name", fallback_node_id)
 
-    fb_exec = AgentExecution(
-        execution_id=execution_id,
-        agent_node_id=fallback_node_id,
-        agent_name=fb_name,
-        status="running",
-        provider=provider,
-        model_used=model,
-        parallel_group=parallel_group,
-        execution_order=execution_order,
-        is_fallback=True,
-        fallback_for=original_node_id,
-        started_at=datetime.now(timezone.utc),
-    )
-
-    prompt = _build_agent_prompt(fallback_config, dependency_outputs, input_data)
-    fb_exec.input_data = {
-        "prompt": prompt,
-        "system_prompt": system_prompt,
-        "dependency_outputs": dependency_outputs,
-    }
-
-    db.add(fb_exec)
-    await db.flush()
-
-    events.agent_started(execution_id, fallback_node_id, fb_name, parallel_group)
-
-    try:
-        adapter = _get_adapter(provider)
-        result: LLMResponse = await adapter.complete(
-            prompt=prompt, system_prompt=system_prompt, config=fallback_config,
+    async with session_factory() as db:
+        fb_exec = AgentExecution(
+            execution_id=execution_id,
+            agent_node_id=fallback_node_id,
+            agent_name=fb_name,
+            status="running",
+            provider=provider,
+            model_used=model,
+            parallel_group=parallel_group,
+            execution_order=execution_order,
+            is_fallback=True,
+            fallback_for=original_node_id,
+            started_at=datetime.now(timezone.utc),
         )
 
-        fb_exec.status = "completed"
-        fb_exec.output_data = {"text": result.text}
-        fb_exec.tokens_prompt = result.tokens.prompt
-        fb_exec.tokens_completion = result.tokens.completion
-        fb_exec.cost = result.cost
-        fb_exec.latency_ms = result.latency_ms
-        fb_exec.completed_at = datetime.now(timezone.utc)
-        await db.flush()
-
-        events.agent_completed(
-            execution_id, fallback_node_id, fb_name,
-            result.tokens.prompt, result.tokens.completion,
-            result.cost, result.latency_ms,
-        )
-
-        return {
-            "node_id": original_node_id,
-            "status": "completed",
-            "text": result.text,
-            "agent_name": fb_name,
-            "tokens_prompt": result.tokens.prompt,
-            "tokens_completion": result.tokens.completion,
-            "cost": result.cost,
-            "is_fallback": True,
+        prompt = _build_agent_prompt(fallback_config, dependency_outputs, input_data)
+        fb_exec.input_data = {
+            "prompt": prompt,
+            "system_prompt": system_prompt,
+            "dependency_outputs": dependency_outputs,
         }
 
-    except Exception as exc:
-        logger.error(f"Fallback {fallback_node_id} for {original_node_id} also failed: {exc}")
-        fb_exec.status = "failed"
-        fb_exec.error_message = str(exc)
-        fb_exec.completed_at = datetime.now(timezone.utc)
+        db.add(fb_exec)
         await db.flush()
 
-        events.agent_failed(
-            execution_id, fallback_node_id, fb_name,
-            str(exc), False, 0,
-        )
+        events.agent_started(execution_id, fallback_node_id, fb_name, parallel_group)
 
-        return {
-            "node_id": original_node_id,
-            "status": "failed",
-            "error": str(exc),
-        }
+        try:
+            adapter = _get_adapter(provider)
+            result: LLMResponse = await adapter.complete(
+                prompt=prompt, system_prompt=system_prompt, config=fallback_config,
+            )
+
+            fb_exec.status = "completed"
+            fb_exec.output_data = {"text": result.text}
+            fb_exec.tokens_prompt = result.tokens.prompt
+            fb_exec.tokens_completion = result.tokens.completion
+            fb_exec.cost = result.cost
+            fb_exec.latency_ms = result.latency_ms
+            fb_exec.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+
+            events.agent_completed(
+                execution_id, fallback_node_id, fb_name,
+                result.tokens.prompt, result.tokens.completion,
+                result.cost, result.latency_ms,
+            )
+
+            return {
+                "node_id": original_node_id,
+                "status": "completed",
+                "text": result.text,
+                "agent_name": fb_name,
+                "tokens_prompt": result.tokens.prompt,
+                "tokens_completion": result.tokens.completion,
+                "cost": result.cost,
+                "is_fallback": True,
+            }
+
+        except Exception as exc:
+            logger.error(f"Fallback {fallback_node_id} for {original_node_id} also failed: {exc}")
+            fb_exec.status = "failed"
+            fb_exec.error_message = str(exc)
+            fb_exec.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+
+            events.agent_failed(
+                execution_id, fallback_node_id, fb_name,
+                str(exc), False, 0,
+            )
+
+            return {
+                "node_id": original_node_id,
+                "status": "failed",
+                "error": str(exc),
+            }
 
 
 async def execute_workflow(
@@ -352,6 +354,7 @@ async def execute_workflow(
     input_data: dict[str, Any] | None = None,
     budget_max_tokens: int | None = None,
     budget_max_cost: float | None = None,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
     """
     Run all parallel groups in order.
@@ -408,7 +411,8 @@ async def execute_workflow(
                     execution_id, nid, nname, "Budget exceeded",
                 )
                 order_counter += 1
-            await db.flush()
+            async with _db_lock:
+                await db.flush()
             continue
 
         tasks = []
@@ -477,9 +481,10 @@ async def execute_workflow(
             current_order = order_counter
             order_counter += 1
 
+            assert session_factory is not None
             tasks.append(
                 _execute_agent_with_recovery(
-                    db=db,
+                    session_factory=session_factory,
                     execution_id=execution_id,
                     node_id=nid,
                     node_config=node_cfg,

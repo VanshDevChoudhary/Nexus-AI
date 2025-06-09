@@ -56,8 +56,7 @@ export default function ExecutionViewer({
   return (
     <>
       {/* Live status bar */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-zinc-900/95 border border-zinc-700 rounded-lg px-4 py-2.5 shadow-xl backdrop-blur-sm">
-        {/* Connection indicator */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-700 rounded-lg px-4 py-2.5 shadow-xl backdrop-blur-sm">
         <span
           className={`w-2 h-2 rounded-full ${
             isConnected ? "bg-emerald-400" : "bg-red-400"
@@ -67,17 +66,17 @@ export default function ExecutionViewer({
 
         {isRunning && (
           <>
-            <span className="text-xs text-zinc-400">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
               {counts.running > 0 && (
-                <span className="text-blue-300">{counts.running} running</span>
+                <span className="text-blue-600 dark:text-blue-300">{counts.running} running</span>
               )}
             </span>
-            <span className="w-px h-4 bg-zinc-700" />
-            <span className="text-xs text-zinc-400">
+            <span className="w-px h-4 bg-zinc-200 dark:bg-zinc-700" />
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
               {counts.completed} done
             </span>
-            <span className="w-px h-4 bg-zinc-700" />
-            <span className="text-xs font-mono text-emerald-300">
+            <span className="w-px h-4 bg-zinc-200 dark:bg-zinc-700" />
+            <span className="text-xs font-mono text-emerald-600 dark:text-emerald-300">
               ${liveCost.toFixed(4)}
             </span>
           </>
@@ -86,18 +85,18 @@ export default function ExecutionViewer({
         {isDone && (
           <>
             <span className={`text-xs font-medium ${
-              executionStatus === "completed" ? "text-emerald-300" : "text-red-300"
+              executionStatus === "completed" ? "text-emerald-600 dark:text-emerald-300" : "text-red-600 dark:text-red-300"
             }`}>
               {executionStatus === "completed" ? "Completed" : "Failed"}
             </span>
-            <span className="w-px h-4 bg-zinc-700" />
-            <span className="text-xs font-mono text-emerald-300">
+            <span className="w-px h-4 bg-zinc-200 dark:bg-zinc-700" />
+            <span className="text-xs font-mono text-emerald-600 dark:text-emerald-300">
               ${(totals?.cost ?? liveCost).toFixed(4)}
             </span>
             {totals?.duration_ms !== undefined && (
               <>
-                <span className="w-px h-4 bg-zinc-700" />
-                <span className="text-xs text-zinc-400">
+                <span className="w-px h-4 bg-zinc-200 dark:bg-zinc-700" />
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
                   {(totals.duration_ms / 1000).toFixed(1)}s
                 </span>
               </>
@@ -108,25 +107,25 @@ export default function ExecutionViewer({
 
       {/* Completion summary toast */}
       {isDone && (
-        <div className="absolute top-16 right-4 z-20 bg-zinc-900/95 border border-zinc-700 rounded-lg p-4 shadow-xl backdrop-blur-sm max-w-xs">
+        <div className="absolute top-16 right-4 z-20 bg-white/95 dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 shadow-xl backdrop-blur-sm max-w-xs">
           <div className="flex items-center justify-between mb-2">
             <h3 className={`text-sm font-semibold ${
-              executionStatus === "completed" ? "text-emerald-300" : "text-red-300"
+              executionStatus === "completed" ? "text-emerald-600 dark:text-emerald-300" : "text-red-600 dark:text-red-300"
             }`}>
               Execution {executionStatus}
             </h3>
             <button
               onClick={onClose}
-              className="text-zinc-500 hover:text-zinc-300 text-xs"
+              className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 text-xs"
             >
               Dismiss
             </button>
           </div>
           {totals && (
-            <div className="space-y-1 text-xs text-zinc-400">
+            <div className="space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
               <div className="flex justify-between">
                 <span>Cost</span>
-                <span className="text-emerald-300 font-mono">${totals.cost.toFixed(4)}</span>
+                <span className="text-emerald-600 dark:text-emerald-300 font-mono">${totals.cost.toFixed(4)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Duration</span>
@@ -136,13 +135,13 @@ export default function ExecutionViewer({
                 <span>Tokens</span>
                 <span>{(totals.tokens_prompt + totals.tokens_completion).toLocaleString()}</span>
               </div>
-              <div className="flex gap-3 mt-1.5 pt-1.5 border-t border-zinc-800">
-                <span className="text-emerald-400">{totals.agents_completed} passed</span>
+              <div className="flex gap-3 mt-1.5 pt-1.5 border-t border-zinc-200 dark:border-zinc-800">
+                <span className="text-emerald-600 dark:text-emerald-400">{totals.agents_completed} passed</span>
                 {totals.agents_failed > 0 && (
-                  <span className="text-red-400">{totals.agents_failed} failed</span>
+                  <span className="text-red-600 dark:text-red-400">{totals.agents_failed} failed</span>
                 )}
                 {totals.agents_skipped > 0 && (
-                  <span className="text-purple-400">{totals.agents_skipped} skipped</span>
+                  <span className="text-purple-600 dark:text-purple-400">{totals.agents_skipped} skipped</span>
                 )}
               </div>
             </div>
@@ -150,7 +149,7 @@ export default function ExecutionViewer({
           {detailUrl && (
             <Link
               href={detailUrl}
-              className="block mt-3 pt-2.5 border-t border-zinc-800 text-center text-xs text-blue-400 hover:text-blue-300 font-medium"
+              className="block mt-3 pt-2.5 border-t border-zinc-200 dark:border-zinc-800 text-center text-xs text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300 font-medium"
             >
               View Details
             </Link>

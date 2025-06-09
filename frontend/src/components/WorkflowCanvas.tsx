@@ -140,14 +140,13 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
       target: e.target,
       data: e.data || {},
       animated: true,
-      style: { stroke: "#52525b" },
+      style: { stroke: "#a1a1aa" },
     })) || [],
   );
 
   const [selectedNode, setSelectedNode] = useState<Node<NodeData> | null>(null);
   const rfInstance = useRef<ReactFlowInstance | null>(null);
 
-  // execution state
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [execError, setExecError] = useState<string | null>(null);
   const [showExecViewer, setShowExecViewer] = useState(false);
@@ -163,7 +162,6 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
     stopListening,
   } = useExecution();
 
-  // overlay execution status onto node data for rendering
   const displayNodes = useMemo(() => {
     if (!showExecViewer) return nodes;
     return nodes.map((n) => {
@@ -181,7 +179,6 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
     });
   }, [nodes, nodeStatuses, showExecViewer]);
 
-  // minimap colors during execution
   const minimapNodeColor = useCallback(
     (n: Node) => {
       if (showExecViewer) {
@@ -194,14 +191,14 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
             retrying: "#eab308",
             skipped: "#a855f7",
           };
-          return colorMap[ns.status] || "#52525b";
+          return colorMap[ns.status] || "#a1a1aa";
         }
-        return "#52525b";
+        return "#a1a1aa";
       }
       if (n.type === "agent") return "#3b82f6";
       if (n.type === "tool") return "#10b981";
       if (n.type === "conditional") return "#f97316";
-      return "#52525b";
+      return "#a1a1aa";
     },
     [showExecViewer, nodeStatuses],
   );
@@ -282,7 +279,7 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
             ...connection,
             id: generateEdgeId(),
             animated: true,
-            style: { stroke: "#52525b" },
+            style: { stroke: "#a1a1aa" },
           },
           eds,
         ),
@@ -384,23 +381,23 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
           >
             + Conditional
           </button>
-          <div className="w-px h-5 bg-zinc-700 mx-1" />
+          <div className="w-px h-5 bg-zinc-300 dark:bg-zinc-700 mx-1" />
           <button
             onClick={handleAutoLayout}
-            className="bg-zinc-800/90 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm"
+            className="bg-white/90 dark:bg-zinc-800/90 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm border border-zinc-200 dark:border-transparent"
           >
             Auto Layout
           </button>
           <button
             onClick={handleSave}
             disabled={saving || isRunning}
-            className="bg-zinc-800/90 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm disabled:opacity-50"
+            className="bg-white/90 dark:bg-zinc-800/90 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm disabled:opacity-50 border border-zinc-200 dark:border-transparent"
           >
             {saving ? "Saving..." : "Save"}
           </button>
           {workflowId && nodes.length > 0 && (
             <>
-              <div className="w-px h-5 bg-zinc-700 mx-1" />
+              <div className="w-px h-5 bg-zinc-300 dark:bg-zinc-700 mx-1" />
               <button
                 onClick={handleRunClick}
                 disabled={isRunning}
@@ -417,10 +414,10 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
           )}
           {workflowId && (
             <>
-              <div className="w-px h-5 bg-zinc-700 mx-1" />
+              <div className="w-px h-5 bg-zinc-300 dark:bg-zinc-700 mx-1" />
               <Link
                 href={`/workflows/${workflowId}/executions`}
-                className="bg-zinc-800/90 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm"
+                className="bg-white/90 dark:bg-zinc-800/90 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded text-xs font-medium backdrop-blur-sm border border-zinc-200 dark:border-transparent"
               >
                 History
               </Link>
@@ -429,11 +426,11 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
         </div>
 
         {execError && (
-          <div className="absolute top-12 left-3 z-10 bg-red-900/80 border border-red-700 text-red-200 text-xs px-3 py-2 rounded max-w-sm">
+          <div className="absolute top-12 left-3 z-10 bg-red-100 dark:bg-red-900/80 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-200 text-xs px-3 py-2 rounded max-w-sm">
             {execError}
             <button
               onClick={() => setExecError(null)}
-              className="ml-2 text-red-400 hover:text-red-200"
+              className="ml-2 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200"
             >
               dismiss
             </button>
@@ -452,18 +449,18 @@ export default function WorkflowCanvas({ initialData, onSave, saving, workflowId
           nodeTypes={nodeTypesMemo}
           fitView
           deleteKeyCode={isRunning ? [] : ["Backspace", "Delete"]}
-          className="bg-zinc-950"
+          className="bg-gray-50 dark:bg-zinc-950"
           defaultEdgeOptions={{
             animated: true,
-            style: { stroke: "#52525b" },
+            style: { stroke: "#a1a1aa" },
           }}
         >
-          <Background color="#27272a" gap={20} />
-          <Controls className="!bg-zinc-800 !border-zinc-700 !shadow-lg [&>button]:!bg-zinc-800 [&>button]:!border-zinc-700 [&>button]:!text-zinc-400 [&>button:hover]:!bg-zinc-700" />
+          <Background color="#d4d4d8" gap={20} className="dark:!text-zinc-800" />
+          <Controls className="!bg-white dark:!bg-zinc-800 !border-zinc-200 dark:!border-zinc-700 !shadow-lg [&>button]:!bg-white dark:[&>button]:!bg-zinc-800 [&>button]:!border-zinc-200 dark:[&>button]:!border-zinc-700 [&>button]:!text-zinc-500 dark:[&>button]:!text-zinc-400 [&>button:hover]:!bg-zinc-100 dark:[&>button:hover]:!bg-zinc-700" />
           <MiniMap
-            className="!bg-zinc-900 !border-zinc-800"
+            className="!bg-white dark:!bg-zinc-900 !border-zinc-200 dark:!border-zinc-800"
             nodeColor={minimapNodeColor}
-            maskColor="rgba(0, 0, 0, 0.7)"
+            maskColor="rgba(0, 0, 0, 0.1)"
           />
         </ReactFlow>
 
