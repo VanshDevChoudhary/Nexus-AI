@@ -29,7 +29,7 @@ You build workflows visually, the engine resolves them into dependency-aware exe
 ## Quick start
 
 ```bash
-git clone https://github.com/shivang-goliyan/Nexus-AI.git
+git clone https://github.com/VanshDevChoudhary/Nexus-AI.git
 cd Nexus-AI
 
 cp .env.example .env
